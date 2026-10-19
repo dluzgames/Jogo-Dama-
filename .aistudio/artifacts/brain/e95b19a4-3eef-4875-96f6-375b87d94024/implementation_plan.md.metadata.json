@@ -1,0 +1,6 @@
+{
+  "summary": "Plano de implementação para converter o jogo de Xadrez 3D para Damas Brasileiras 3D (tabuleiro 8x8 oficial, 12 pedras operárias por lado, transformação em Dama com modelo da Rainha dourada, captura obrigatória para frente e para trás, Lei da Maioria, modo IA e 2 Jogadores local).",
+  "updatedAt": "2026-10-19T20:33:13.210525219Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
