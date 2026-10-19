@@ -1,6 +1,6 @@
 {
   "name": "Jogo dama!",
-  "description": "Interactive 3D Gothic Cathedral Wizard Chess with sculpted stone pieces, cinematic melee captures, stone shatter physics, and single-player AI.",
+  "description": "Jogo de Damas Tradicional Brasileiro em 3D no altar gótico com 12 pedras operárias por lado, coroação em Dama dourada, captura obrigatória com Lei da Maioria, física de estilhaçamento de pedra, modo contra IA e 2 jogadores local.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

@@ -208,10 +208,457 @@ html, body, #root {
 
 /* Cinematic UI Hidden Mode */
 body.cinematic-ui-hidden #hud-top,
-body.cinematic-ui-hidden #hud-bottom {
+body.cinematic-ui-hidden #hud-bottom,
+body.cinematic-ui-hidden #history-sidebar {
   opacity: 0 !important;
   pointer-events: none !important;
   transition: opacity 0.25s ease;
+}
+
+/* Lateral Move History & Assopradas Panel */
+.history-sidebar {
+  position: fixed;
+  top: 72px;
+  right: 20px;
+  bottom: 72px;
+  width: 300px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(12, 15, 24, 0.88) 0%, rgba(8, 10, 16, 0.92) 100%);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--hud-border);
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.65);
+  color: var(--text);
+  overflow: hidden;
+  transition:
+    width 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    bottom 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.22s ease,
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.history-sidebar.collapsed {
+  bottom: auto;
+  height: 46px;
+  width: 224px;
+}
+
+.history-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.22);
+  background: rgba(212, 175, 55, 0.07);
+  flex-shrink: 0;
+}
+
+.history-sidebar.collapsed .history-sidebar-header {
+  border-bottom: none;
+}
+
+.history-sidebar.collapsed .history-sidebar-body {
+  display: none;
+}
+
+.history-sidebar-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-sidebar-icon {
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.history-sidebar-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+  white-space: nowrap;
+}
+
+.history-collapse-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(212, 175, 55, 0.32);
+  color: var(--gold-bright);
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.history-collapse-btn:hover {
+  background: rgba(212, 175, 55, 0.22);
+  border-color: var(--gold);
+}
+
+.history-sidebar-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Placar de Peças Capturadas por Jogador */
+.history-captures-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.capture-score-card {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.capture-score-card.white-card {
+  border-color: rgba(240, 236, 225, 0.24);
+}
+
+.capture-score-card.black-card {
+  border-color: rgba(212, 175, 55, 0.24);
+}
+
+.capture-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.capture-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.capture-dot.white {
+  background: #f0ece1;
+  box-shadow: 0 0 6px rgba(240, 236, 225, 0.75);
+}
+
+.capture-dot.black {
+  background: #2b303c;
+  border: 1.5px solid var(--gold);
+}
+
+.capture-card-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+
+.capture-card-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--gold-bright);
+  line-height: 1.15;
+}
+
+.capture-card-value small {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.capture-card-sub {
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.capture-mini-stones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-height: 12px;
+  margin-top: 2px;
+}
+
+.mini-stone-pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.mini-stone-pip.captured-b {
+  background: #2b303c;
+  border: 1px solid var(--gold);
+}
+
+.mini-stone-pip.captured-w {
+  background: #f0ece1;
+  border: 1px solid rgba(212, 175, 55, 0.65);
+}
+
+.mini-stone-pip.assoprada-pip {
+  box-shadow: 0 0 6px rgba(255, 123, 84, 0.9);
+  border-color: #ff7b54;
+}
+
+/* Lista Separada e Visualmente Destacada de Pedras Assopradas */
+.assopradas-panel {
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(230, 57, 70, 0.14) 0%, rgba(251, 133, 0, 0.08) 100%);
+  border: 1px solid rgba(255, 138, 91, 0.48);
+  border-radius: 12px;
+  padding: 8px 10px;
+  box-shadow: inset 0 0 18px rgba(230, 57, 70, 0.12);
+  flex-shrink: 0;
+  max-height: 148px;
+}
+
+.assopradas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.assopradas-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffb49a;
+}
+
+.assopradas-badge {
+  background: rgba(230, 57, 70, 0.32);
+  border: 1px solid rgba(255, 138, 91, 0.65);
+  color: #ffe3d8;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.assopradas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  max-height: 102px;
+  padding-right: 2px;
+}
+
+.assoprada-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(12, 14, 22, 0.68);
+  border-left: 3px solid #ff7b54;
+  font-size: 0.72rem;
+  animation: assopradaPulseIn 0.38s ease-out;
+}
+
+@keyframes assopradaPulseIn {
+  0% {
+    transform: translateX(8px);
+    opacity: 0;
+    background: rgba(230, 57, 70, 0.38);
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+    background: rgba(12, 14, 22, 0.68);
+  }
+}
+
+.assoprada-item-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assoprada-wind-tag {
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 123, 84, 0.22);
+  color: #ffb49a;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.assoprada-desc {
+  color: #f6eee8;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assoprada-sq {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gold-bright);
+  background: rgba(212, 175, 55, 0.14);
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* Lista Cronológica de Jogadas */
+.moves-log-panel {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  padding: 8px 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.moves-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.moves-log-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.moves-log-badge {
+  background: rgba(212, 175, 55, 0.16);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  color: var(--gold-bright);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.moves-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  padding-right: 2px;
+}
+
+.move-log-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.73rem;
+}
+
+.move-log-row.is-capture {
+  border-color: rgba(212, 175, 55, 0.32);
+  background: rgba(212, 175, 55, 0.07);
+}
+
+.move-log-row.is-assoprada {
+  border-color: rgba(255, 123, 84, 0.45);
+  background: rgba(230, 57, 70, 0.11);
+}
+
+.move-log-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.move-log-num {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  color: var(--muted);
+  min-width: 22px;
+}
+
+.move-log-coord {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.move-log-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.move-tag {
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.move-tag.capture {
+  background: rgba(212, 175, 55, 0.22);
+  color: var(--gold-bright);
+  border: 1px solid rgba(212, 175, 55, 0.45);
+}
+
+.move-tag.dama {
+  background: rgba(245, 215, 110, 0.28);
+  color: #fff5cc;
+  border: 1px solid var(--gold-bright);
+}
+
+.move-tag.assoprada {
+  background: rgba(230, 57, 70, 0.28);
+  color: #ffb49a;
+  border: 1px solid rgba(255, 123, 84, 0.6);
+}
+
+.history-empty-msg {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.4;
+  text-align: center;
+  padding: 8px 4px;
 }
 
 /* Gothic Cathedral Checkmate Proclamation Banner */
@@ -641,11 +1088,12 @@ body.cinematic-ui-hidden #hud-bottom {
     white-space: nowrap;
   }
 
-  /* 3 Game Action buttons in a 3-column row */
+  /* 4 Game Action buttons in a 2x2 grid */
+  #btn-mode-toggle,
   #btn-side-toggle,
   #btn-ai-move,
   #btn-reset {
-    grid-column: span 2;
+    grid-column: span 3;
   }
 
   /* 4 Camera View buttons in a 2x2 grid */
@@ -656,9 +1104,24 @@ body.cinematic-ui-hidden #hud-bottom {
     grid-column: span 3;
   }
 
-  /* Full-width Hide UI button */
+  /* History, Sound & Hide UI buttons side by side */
+  #btn-history-toggle,
+  #btn-sound-toggle,
   #btn-hide-ui {
-    grid-column: span 6;
+    grid-column: span 2;
+  }
+
+  .history-sidebar {
+    top: 62px;
+    right: 12px;
+    bottom: auto;
+    max-height: calc(100vh - 132px);
+    width: min(290px, calc(100vw - 24px));
+  }
+
+  .history-sidebar.collapsed {
+    width: 196px;
+    height: 42px;
   }
 
   .mobile-sheet-hint {

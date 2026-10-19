@@ -19,6 +19,13 @@ test('Simplified Single-Player HUD in src/App.tsx excludes speed sliders, notati
     'btn-cam-side',
     'btn-cam-wide',
     'btn-hide-ui',
+    'btn-history-toggle',
+    'history-sidebar',
+    'hist-cap-white-count',
+    'hist-cap-black-count',
+    'assopradas-panel',
+    'assopradas-list',
+    'moves-history-list',
     'controls-hint',
     'captured-tray'
   ]) {
@@ -72,3 +79,21 @@ test('All 7 compressed 3D assets (.glb.gz.b64) decode and gunzip to valid glTF 2
     assert.equal(totalLen, glbBuf.length, `Mismatched glTF byte length for ${name}`);
   }
 });
+
+test('Brazilian Checkers 8x8 rules and Golden Queen Dama coronation are implemented in wizardChessEngine.js', () => {
+  const engineSrc = fs.readFileSync(path.join(ROOT, 'src/wizardChessEngine.js'), 'utf-8');
+  assert.ok(engineSrc.includes("const PIECE_TYPES = ['pawn', 'queen']"), 'Should restrict active pieces to pawn (Pedra) and queen (Dama)');
+  assert.ok(engineSrc.includes('getCaptureTreesForPiece'), 'Should implement recursive capture tree search');
+  assert.ok(engineSrc.includes('getGlobalMaxCapturesForColor'), 'Should implement Lei da Maioria capture sequence calculation');
+  assert.ok(engineSrc.includes('spawnCoronationBurst'), 'Should implement coronation into Golden Queen Dama');
+  assert.ok(engineSrc.includes('spawnCaptureMagicParticles'), 'Should implement 3D magic dust and golden sparks particle system on capture');
+  assert.ok(engineSrc.includes('playStoneShatterAndSparksSound'), 'Should implement procedural Web Audio API sound effects for stone shatter and sparks');
+  assert.ok(engineSrc.includes('toggleSound'), 'Should implement sound mute/unmute toggle');
+  assert.ok(engineSrc.includes('assoprarPedra'), 'Should implement Regra do Assopro (blowing away the stone that failed to capture)');
+  assert.ok(engineSrc.includes('getPiecesWithCaptureAvailable'), 'Should detect pieces that had a capture available before a non-capture move');
+  assert.ok(engineSrc.includes('updateHistorySidebarUI'), 'Should update the lateral move history and assopradas sidebar UI');
+  assert.ok(engineSrc.includes('assopradasHistory'), 'Should maintain a dedicated list of blown-away (assopradas) stones');
+  assert.ok(engineSrc.includes('CaptureLightAndSparkEmitterGroup'), 'Should create a 3D group of light emitters and golden sparks at the capture location');
+  assert.ok(engineSrc.includes('lightEmitters') && engineSrc.includes('sparkStreaks') && engineSrc.includes('sharedShardVectors'), 'Should coordinate light emitters and 3D golden spark streaks with stone shatter physics');
+});
+

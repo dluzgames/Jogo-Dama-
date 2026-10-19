@@ -9,10 +9,10 @@ const SkeletonUtils = { clone: cloneSkeleton };
 
 export function initWizardChess() {
     // =========================================================================
-    // Constants & Board Coordinates
+    // Constants & Board Coordinates (Tabuleiro Oficial 8x8 — Damas Brasileiras)
     // =========================================================================
-    const PIECE_TYPES = ['pawn', 'rook', 'knight', 'bishop', 'queen', 'king'];
-    const PIECE_VALUES = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 20000 };
+    const PIECE_TYPES = ['pawn', 'queen'];
+    const PIECE_VALUES = { pawn: 100, queen: 350 };
     const BOARD_SQ_SIZE = 0.34;
     const BOARD_SURFACE_Y = 0.775;
 
@@ -829,7 +829,7 @@ export function initWizardChess() {
     scene.add(impactFlashLight);
 
     // =========================================================================
-    // Materials for White & Black Sculpted Stone Chess Pieces
+    // Materials for White & Black Sculpted Stone Checkers Pieces & Golden Damas
     // =========================================================================
     const whitePieceMat = new THREE.MeshStandardMaterial({
       color: 0xe6dfd0,
@@ -843,10 +843,34 @@ export function initWizardChess() {
       metalness: 0.24
     });
 
+    const whiteDamaMat = new THREE.MeshStandardMaterial({
+      color: 0xfbf5e6,
+      roughness: 0.24,
+      metalness: 0.28,
+      emissive: 0x3b2c0a,
+      emissiveIntensity: 0.22
+    });
+
+    const blackDamaMat = new THREE.MeshStandardMaterial({
+      color: 0x2a2620,
+      roughness: 0.22,
+      metalness: 0.45,
+      emissive: 0x332206,
+      emissiveIntensity: 0.26
+    });
+
     const goldTrimMat = new THREE.MeshStandardMaterial({
       color: 0xd4af37,
       roughness: 0.26,
       metalness: 0.86
+    });
+
+    const damaCrownGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xffe066,
+      roughness: 0.16,
+      metalness: 0.94,
+      emissive: 0xd49b1a,
+      emissiveIntensity: 0.48
     });
 
     const forgedSteelMat = new THREE.MeshStandardMaterial({
@@ -1507,15 +1531,24 @@ export function initWizardChess() {
       }
     }
 
+    const damaHaloGeo = new THREE.TorusGeometry(0.37, 0.032, 16, 36);
+    damaHaloGeo.rotateX(Math.PI / 2);
+
     function instantiatePiece(type, color, r, c) {
-      const tpl = pieceTemplates[`${type}_${color}`];
+      const actualType = type === 'queen' ? 'queen' : 'pawn';
+      const isDama = actualType === 'queen';
+      const tpl = pieceTemplates[`${actualType}_${color}`];
       let root;
       let mixer = null;
       const actions = {};
 
       if (tpl && tpl.scene) {
         root = SkeletonUtils.clone(tpl.scene);
-        const primaryMat = color === 'w' ? whitePieceMat : blackPieceMat;
+        const primaryMat = isDama
+          ? (color === 'w' ? whiteDamaMat : blackDamaMat)
+          : (color === 'w' ? whitePieceMat : blackPieceMat);
+        const trimMat = isDama ? damaCrownGoldMat : goldTrimMat;
+
         root.traverse((child) => {
           const nm = child.name || '';
           if (nm.includes('Icosphere') || nm.includes('glTF_not_exported')) {
@@ -1525,9 +1558,9 @@ export function initWizardChess() {
           if (child.isMesh) {
             const mName = child.material?.name || '';
             if (mName.includes('Gold') || mName.includes('Trim') || mName.includes('Bronze') || mName.includes('Glow')) {
-              child.material = goldTrimMat;
+              child.material = trimMat;
             } else if (mName.includes('Steel')) {
-              child.material = forgedSteelMat;
+              child.material = isDama ? damaCrownGoldMat : forgedSteelMat;
             } else {
               child.material = primaryMat;
             }
@@ -1535,6 +1568,15 @@ export function initWizardChess() {
             child.receiveShadow = true;
           }
         });
+
+        // Se for uma Dama coroada (modelo da Rainha), adiciona um halo de coroa dourado luminoso na base do pedestal
+        if (isDama) {
+          const haloRing = new THREE.Mesh(damaHaloGeo, damaCrownGoldMat);
+          haloRing.position.set(0, 0.055, 0);
+          haloRing.castShadow = true;
+          root.add(haloRing);
+        }
+
         mixer = new THREE.AnimationMixer(root);
         for (const clip of tpl.animations) {
           actions[clip.name] = mixer.clipAction(clip);
@@ -1542,21 +1584,22 @@ export function initWizardChess() {
         activeMixers.push(mixer);
       } else {
         root = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.1, 0.14, 0.42, 16),
-          color === 'w' ? whitePieceMat : blackPieceMat
+          new THREE.CylinderGeometry(0.1, 0.14, isDama ? 0.54 : 0.36, 16),
+          isDama ? damaCrownGoldMat : (color === 'w' ? whitePieceMat : blackPieceMat)
         );
       }
 
       const worldPos = boardToWorld(r, c);
       root.position.copy(worldPos);
-      const scale = BOARD_SQ_SIZE;
+      const scale = isDama ? BOARD_SQ_SIZE * 1.05 : BOARD_SQ_SIZE;
       root.scale.set(scale, scale, scale);
-      // White (at +Z, r=6,7) faces -Z (Math.PI); Black (at -Z, r=0,1) faces +Z (0)
+      // White (at +Z, r=5,6,7) faces -Z (Math.PI); Black (at -Z, r=0,1,2) faces +Z (0)
       root.rotation.y = color === 'w' ? Math.PI : 0;
       scene.add(root);
 
       const pieceObj = {
-        type,
+        type: actualType,
+        isDama,
         color,
         r,
         c,
@@ -1576,15 +1619,9 @@ export function initWizardChess() {
     }
 
     // Exact per-piece Attack keyframe synchronization (24 fps Blender clips, zero overhead suspension freeze):
-    // - All 6 pieces wind up smoothly through Frame 8..10 (0.29s..0.38s), launch their weapon strike at Frame 9..10 (0.35s..0.38s),
-    //   make physical weapon contact at Frame 15 (0.58s..0.60s), and drive through the opponent at Frame 19.5..20 (0.76s..0.79s) before shatter burst!
     const ATTACK_SYNC_PROFILES = {
       pawn:   { timeScale: 1.15, swingStartClip: 0.36, contactClip: 0.60, blowClip: 0.78, maxLunge: 0.095 },
-      king:   { timeScale: 1.10, swingStartClip: 0.34, contactClip: 0.56, blowClip: 0.75, maxLunge: 0.080 },
-      queen:  { timeScale: 1.08, swingStartClip: 0.35, contactClip: 0.58, blowClip: 0.77, maxLunge: 0.065 },
-      rook:   { timeScale: 1.06, swingStartClip: 0.35, contactClip: 0.58, blowClip: 0.77, maxLunge: 0.055 },
-      knight: { timeScale: 1.08, swingStartClip: 0.35, contactClip: 0.58, blowClip: 0.77, maxLunge: 0.060 },
-      bishop: { timeScale: 1.08, swingStartClip: 0.35, contactClip: 0.58, blowClip: 0.77, maxLunge: 0.065 }
+      queen:  { timeScale: 1.08, swingStartClip: 0.35, contactClip: 0.58, blowClip: 0.77, maxLunge: 0.065 }
     };
 
     function playPieceClip(piece, clipKeyword, loop = true, fadeSeconds = 0.18) {
@@ -1607,11 +1644,9 @@ export function initWizardChess() {
         const prof = ATTACK_SYNC_PROFILES[piece.type] || ATTACK_SYNC_PROFILES.queen;
         nextAction.timeScale = prof.timeScale;
       } else {
-        // Deliberate, weighty stone stride and idle breathing (another 10% slower than 0.90)
         nextAction.timeScale = 0.81;
       }
       if (isIdle && (!fadeSeconds || fadeSeconds <= 0.01)) {
-        // Stagger initial idle phase per board square so the 32 pieces breathe organically out of lockstep
         nextAction.time = ((piece.r * 5 + piece.c * 3) % 16) * 0.11;
       }
       nextAction.fadeIn(fadeSeconds).play();
@@ -1634,7 +1669,20 @@ export function initWizardChess() {
       activeMixers.length = 0;
     }
 
-    // Scripted Chess Notation & Step-Through Choreography State (Features 3a, 3b, 3c)
+    // Estado de Captura Múltipla em Cadeia e Regra do Assopro (Dama Tradicional Brasileira)
+    let activeChainSquare = null; // { r, c } quando a mesma pedra deve continuar saltando
+    let chainCapturedSet = new Set(); // Conjunto de 'r,c' já saltados no turno atual
+    let lastAssoproNotice = ''; // Aviso exibido quando uma pedra é assoprada (eliminada por não comer)
+    let assopradaCount = 0;
+    let assopradasHistory = [];
+
+    function coordToSquareName(r, c) {
+      const file = 'abcdefgh'[c] || '?';
+      const rank = String(8 - r);
+      return `${file}${rank}`;
+    }
+
+    // Scripted / Replay & Victory Banner State
     let scriptedGameActive = false;
     let scriptDeviated = false;
     let scriptMoves = [];
@@ -1670,6 +1718,10 @@ export function initWizardChess() {
         gameOver,
         capturedByWhite,
         capturedByBlack,
+        assopradaCount,
+        assopradasHistory: assopradasHistory.map((item) => ({ ...item })),
+        activeChainSquare: activeChainSquare ? { ...activeChainSquare } : null,
+        chainCapturedKeys: Array.from(chainCapturedSet),
         scriptCursor,
         scriptedGameActive,
         scriptDeviated,
@@ -1692,8 +1744,10 @@ export function initWizardChess() {
         if (d.mesh) scene.remove(d.mesh);
       }
       shatterDebris.length = 0;
+      if (typeof clearMagicParticles === 'function') {
+        clearMagicParticles();
+      }
       impactFlashLight.intensity = 0;
-      impactFlashLight.visible = false;
       if (activeDuelSavedCam) {
         camera.position.copy(activeDuelSavedCam.pos);
         orbitControls.target.copy(activeDuelSavedCam.target);
@@ -1711,6 +1765,12 @@ export function initWizardChess() {
       gameOver = snap.gameOver;
       capturedByWhite = snap.capturedByWhite;
       capturedByBlack = snap.capturedByBlack;
+      assopradaCount = typeof snap.assopradaCount === 'number' ? snap.assopradaCount : 0;
+      assopradasHistory = Array.isArray(snap.assopradasHistory)
+        ? snap.assopradasHistory.map((item) => ({ ...item }))
+        : [];
+      activeChainSquare = snap.activeChainSquare ? { ...snap.activeChainSquare } : null;
+      chainCapturedSet = new Set(snap.chainCapturedKeys || []);
       if (typeof snap.scriptCursor === 'number') {
         scriptCursor = snap.scriptCursor;
       }
@@ -1753,9 +1813,17 @@ export function initWizardChess() {
       }
       orbitControls.enabled = true;
       clearAllPieces();
+      if (typeof clearMagicParticles === 'function') {
+        clearMagicParticles();
+      }
       clearSquareHighlights();
       selectedSquare = null;
       validMoves = [];
+      activeChainSquare = null;
+      chainCapturedSet.clear();
+      lastAssoproNotice = '';
+      assopradaCount = 0;
+      assopradasHistory = [];
       currentTurn = 'w';
       isAnimatingMove = false;
       gameOver = false;
@@ -1767,12 +1835,19 @@ export function initWizardChess() {
         scriptCursor = 0;
       }
 
-      const backRow = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
-      for (let c = 0; c < 8; c++) {
-        boardState[7][c] = instantiatePiece(backRow[c], 'w', 7, c);
-        boardState[6][c] = instantiatePiece('pawn', 'w', 6, c);
-        boardState[1][c] = instantiatePiece('pawn', 'b', 1, c);
-        boardState[0][c] = instantiatePiece(backRow[c], 'b', 0, c);
+      // Posicionamento Oficial da Dama Brasileira (Tabuleiro 8x8 — 64 casas):
+      // 12 pedras pretas nas casas escuras ((r + c) % 2 === 1) das linhas 0, 1 e 2
+      // 12 pedras brancas nas casas escuras ((r + c) % 2 === 1) das linhas 5, 6 e 7
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if ((r + c) % 2 === 1) {
+            if (r <= 2) {
+              boardState[r][c] = instantiatePiece('pawn', 'b', r, c);
+            } else if (r >= 5) {
+              boardState[r][c] = instantiatePiece('pawn', 'w', r, c);
+            }
+          }
+        }
       }
 
       if (orientCamera) {
@@ -1789,179 +1864,297 @@ export function initWizardChess() {
     }
 
     // =========================================================================
-    // Legal Chess Move Generation (Including Check Filtering)
+    // Motor Oficial de Regras — Damas Brasileiras (8x8, Captura Obrigatória & Lei da Maioria)
     // =========================================================================
-    function getPseudoMovesForPiece(r, c, board = boardState) {
+    const DIAGONAL_DIRS = [
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1]
+    ];
+
+    function inBounds(r, c) {
+      return r >= 0 && r < 8 && c >= 0 && c < 8;
+    }
+
+    /**
+     * Busca recursiva (DFS) de todas as árvores de captura para uma peça em (r, c).
+     * Regras Brasileiras:
+     * - Pedra comum ('pawn'): captura para frente E para trás pulando 1 peça inimiga adjacente para a casa vazia imediatamente após.
+     * - Dama ('queen'): captura para frente E para trás a qualquer distância na diagonal, pulando uma única peça inimiga e podendo pousar em qualquer casa vazia subsequente na mesma diagonal.
+     * - Não é permitido saltar duas vezes sobre a mesma peça adversária no mesmo turno (forbiddenSet).
+     * - Pedra comum que passa pela casa de coroação durante captura múltipla NÃO se torna Dama no meio da cadeia (só ao final do turno).
+     */
+    function getCaptureTreesForPiece(r, c, pieceType, pieceColor, board = boardState, forbiddenSet = new Set()) {
+      const results = [];
+      const movingPieceRef = board[r][c];
+
+      if (pieceType === 'pawn') {
+        for (const [dr, dc] of DIAGONAL_DIRS) {
+          const er = r + dr;
+          const ec = c + dc;
+          const lr = r + dr * 2;
+          const lc = c + dc * 2;
+          if (!inBounds(lr, lc)) continue;
+
+          const enemy = board[er][ec];
+          if (!enemy || enemy.color === pieceColor) continue;
+          const enemyKey = `${er},${ec}`;
+          if (forbiddenSet.has(enemyKey)) continue;
+
+          if (board[lr][lc] !== null) continue;
+
+          // Simular salto mantendo a peça inimiga como obstáculo (regra que impede cruzar a mesma peça 2x)
+          board[r][c] = null;
+          board[lr][lc] = movingPieceRef || { type: pieceType, color: pieceColor };
+          const nextForbidden = new Set(forbiddenSet);
+          nextForbidden.add(enemyKey);
+
+          const subTrees = getCaptureTreesForPiece(lr, lc, 'pawn', pieceColor, board, nextForbidden);
+
+          board[lr][lc] = null;
+          board[r][c] = movingPieceRef;
+
+          let maxSub = 0;
+          for (const st of subTrees) {
+            if (st.maxChainCount > maxSub) maxSub = st.maxChainCount;
+          }
+
+          results.push({
+            r: lr,
+            c: lc,
+            capture: true,
+            capturedR: er,
+            capturedC: ec,
+            maxChainCount: 1 + maxSub,
+            subTrees
+          });
+        }
+      } else {
+        // Dama ('queen'): corre a diagonal livremente para capturar
+        for (const [dr, dc] of DIAGONAL_DIRS) {
+          let step = 1;
+          let er = -1;
+          let ec = -1;
+
+          while (inBounds(r + dr * step, c + dc * step)) {
+            const sr = r + dr * step;
+            const sc = c + dc * step;
+            const occ = board[sr][sc];
+            if (!occ) {
+              step++;
+              continue;
+            }
+            // Encontrou a primeira peça nesta diagonal
+            if (occ.color !== pieceColor && !forbiddenSet.has(`${sr},${sc}`)) {
+              er = sr;
+              ec = sc;
+            }
+            break;
+          }
+
+          if (er === -1) continue;
+          const enemyKey = `${er},${ec}`;
+
+          // A Dama pode pousar em qualquer casa vazia após a peça capturada na mesma diagonal
+          let landStep = 1;
+          while (inBounds(er + dr * landStep, ec + dc * landStep)) {
+            const lr = er + dr * landStep;
+            const lc = ec + dc * landStep;
+            if (board[lr][lc] !== null) break; // Bloqueado por outra peça após a vítima
+
+            board[r][c] = null;
+            board[lr][lc] = movingPieceRef || { type: 'queen', color: pieceColor };
+            const nextForbidden = new Set(forbiddenSet);
+            nextForbidden.add(enemyKey);
+
+            const subTrees = getCaptureTreesForPiece(lr, lc, 'queen', pieceColor, board, nextForbidden);
+
+            board[lr][lc] = null;
+            board[r][c] = movingPieceRef;
+
+            let maxSub = 0;
+            for (const st of subTrees) {
+              if (st.maxChainCount > maxSub) maxSub = st.maxChainCount;
+            }
+
+            results.push({
+              r: lr,
+              c: lc,
+              capture: true,
+              capturedR: er,
+              capturedC: ec,
+              maxChainCount: 1 + maxSub,
+              subTrees
+            });
+
+            landStep++;
+          }
+        }
+      }
+
+      return results;
+    }
+
+    /**
+     * Movimentos simples (sem captura) quando nenhuma captura está disponível no tabuleiro:
+     * - Pedra comum ('pawn'): anda apenas 1 casa para a frente na diagonal (não pode voltar!).
+     * - Dama ('queen'): corre quantas casas vazias quiser nas 4 diagonais.
+     */
+    function getSimpleMovesForPiece(r, c, board = boardState) {
       const piece = board[r][c];
       if (!piece) return [];
       const moves = [];
       const { type, color } = piece;
-      const dir = color === 'w' ? -1 : 1;
-
-      const inBounds = (nr, nc) => nr >= 0 && nr < 8 && nc >= 0 && nc < 8;
-      const addMove = (nr, nc) => {
-        if (!inBounds(nr, nc)) return false;
-        const target = board[nr][nc];
-        if (!target) {
-          moves.push({ r: nr, c: nc, capture: false });
-          return true;
-        } else if (target.color !== color) {
-          moves.push({ r: nr, c: nc, capture: true });
-          return false;
-        }
-        return false;
-      };
 
       if (type === 'pawn') {
-        if (inBounds(r + dir, c) && !board[r + dir][c]) {
-          moves.push({ r: r + dir, c, capture: false });
-          const startRow = color === 'w' ? 6 : 1;
-          if (r === startRow && !board[r + dir * 2][c]) {
-            moves.push({ r: r + dir * 2, c, capture: false });
-          }
-        }
+        const forwardDr = color === 'w' ? -1 : 1;
         for (const dc of [-1, 1]) {
-          if (inBounds(r + dir, c + dc)) {
-            const target = board[r + dir][c + dc];
-            if (target && target.color !== color) {
-              moves.push({ r: r + dir, c: c + dc, capture: true });
-            }
-          }
-        }
-      } else if (type === 'knight') {
-        const jumps = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
-        for (const [dr, dc] of jumps) addMove(r + dr, c + dc);
-      } else if (type === 'king') {
-        for (let dr = -1; dr <= 1; dr++) {
-          for (let dc = -1; dc <= 1; dc++) {
-            if (dr !== 0 || dc !== 0) addMove(r + dr, c + dc);
+          const nr = r + forwardDr;
+          const nc = c + dc;
+          if (inBounds(nr, nc) && !board[nr][nc]) {
+            moves.push({ r: nr, c: nc, capture: false, capturedR: -1, capturedC: -1, maxChainCount: 0 });
           }
         }
       } else {
-        const dirs = [];
-        if (type === 'rook' || type === 'queen') dirs.push([-1,0],[1,0],[0,-1],[0,1]);
-        if (type === 'bishop' || type === 'queen') dirs.push([-1,-1],[-1,1],[1,-1],[1,1]);
-        for (const [dr, dc] of dirs) {
-          for (let step = 1; step < 8; step++) {
-            if (!addMove(r + dr * step, c + dc * step)) break;
+        // Dama ('queen') corre toda a diagonal
+        for (const [dr, dc] of DIAGONAL_DIRS) {
+          let step = 1;
+          while (inBounds(r + dr * step, c + dc * step)) {
+            const nr = r + dr * step;
+            const nc = c + dc * step;
+            if (board[nr][nc]) break;
+            moves.push({ r: nr, c: nc, capture: false, capturedR: -1, capturedC: -1, maxChainCount: 0 });
+            step++;
           }
         }
       }
       return moves;
     }
 
-    function isKingInCheck(color, board = boardState) {
-      let kingR = -1;
-      let kingC = -1;
-      for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
-          const p = board[r][c];
-          if (p && p.color === color && p.type === 'king') {
-            kingR = r;
-            kingC = c;
-            break;
-          }
+    /**
+     * Calcula o número máximo global de capturas possíveis para o jogador da vez (Lei da Maioria).
+     */
+    function getGlobalMaxCapturesForColor(color, board = boardState) {
+      if (activeChainSquare && board === boardState) {
+        const p = board[activeChainSquare.r]?.[activeChainSquare.c];
+        if (!p || p.color !== color) return 0;
+        const trees = getCaptureTreesForPiece(
+          activeChainSquare.r,
+          activeChainSquare.c,
+          p.type,
+          p.color,
+          board,
+          chainCapturedSet
+        );
+        let maxC = 0;
+        for (const t of trees) {
+          if (t.maxChainCount > maxC) maxC = t.maxChainCount;
         }
+        return maxC;
       }
-      if (kingR === -1) return true;
-      const oppColor = color === 'w' ? 'b' : 'w';
+
+      let globalMax = 0;
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
           const p = board[r][c];
-          if (p && p.color === oppColor) {
-            const oppMoves = getPseudoMovesForPiece(r, c, board);
-            if (oppMoves.some((m) => m.r === kingR && m.c === kingC)) {
-              return true;
+          if (p && p.color === color) {
+            const trees = getCaptureTreesForPiece(r, c, p.type, p.color, board, new Set());
+            for (const t of trees) {
+              if (t.maxChainCount > globalMax) globalMax = t.maxChainCount;
             }
           }
         }
       }
+      return globalMax;
+    }
+
+    function getPseudoMovesForPiece(r, c, board = boardState) {
+      const piece = board[r][c];
+      if (!piece) return [];
+      const trees = getCaptureTreesForPiece(r, c, piece.type, piece.color, board, new Set());
+      if (trees.length > 0) return trees;
+      return getSimpleMovesForPiece(r, c, board);
+    }
+
+    function isKingInCheck() {
+      // No xadrez havia xeque ao rei; na Dama Brasileira usamos este helper apenas como indicador de captura obrigatória
       return false;
     }
 
-    function getLegalMovesForPiece(r, c) {
-      const piece = boardState[r][c];
-      if (!piece) return [];
-      const pseudo = getPseudoMovesForPiece(r, c, boardState);
-      const legal = [];
-      for (const m of pseudo) {
-        const savedTarget = boardState[m.r][m.c];
-        boardState[m.r][m.c] = piece;
-        boardState[r][c] = null;
-        const inCheck = isKingInCheck(piece.color, boardState);
-        boardState[r][c] = piece;
-        boardState[m.r][m.c] = savedTarget;
-        if (!inCheck) legal.push(m);
-      }
-
-      // Castling (Kingside O-O to c=6, Queenside O-O-O to c=2)
-      const homeRow = piece.color === 'w' ? 7 : 0;
-      if (
-        piece.type === 'king' &&
-        !piece.hasMoved &&
-        r === homeRow &&
-        c === 4 &&
-        !isKingInCheck(piece.color, boardState)
-      ) {
-        // Kingside (O-O: King e->g [4->6], Rook h->f [7->5])
-        const kRook = boardState[homeRow][7];
-        if (
-          kRook &&
-          kRook.type === 'rook' &&
-          kRook.color === piece.color &&
-          !kRook.hasMoved &&
-          !boardState[homeRow][5] &&
-          !boardState[homeRow][6]
-        ) {
-          boardState[homeRow][5] = piece;
-          boardState[homeRow][4] = null;
-          const checkF = isKingInCheck(piece.color, boardState);
-          boardState[homeRow][6] = piece;
-          boardState[homeRow][5] = null;
-          const checkG = isKingInCheck(piece.color, boardState);
-          boardState[homeRow][4] = piece;
-          boardState[homeRow][6] = null;
-          if (!checkF && !checkG) {
-            legal.push({ r: homeRow, c: 6, capture: false, castle: 'k', rookFromC: 7, rookToC: 5 });
-          }
-        }
-        // Queenside (O-O-O: King e->c [4->2], Rook a->d [0->3])
-        const qRook = boardState[homeRow][0];
-        if (
-          qRook &&
-          qRook.type === 'rook' &&
-          qRook.color === piece.color &&
-          !qRook.hasMoved &&
-          !boardState[homeRow][1] &&
-          !boardState[homeRow][2] &&
-          !boardState[homeRow][3]
-        ) {
-          boardState[homeRow][3] = piece;
-          boardState[homeRow][4] = null;
-          const checkD = isKingInCheck(piece.color, boardState);
-          boardState[homeRow][2] = piece;
-          boardState[homeRow][3] = null;
-          const checkC = isKingInCheck(piece.color, boardState);
-          boardState[homeRow][4] = piece;
-          boardState[homeRow][2] = null;
-          if (!checkD && !checkC) {
-            legal.push({ r: homeRow, c: 2, capture: false, castle: 'q', rookFromC: 0, rookToC: 3 });
+    /**
+     * Lista todas as pedras da cor `color` que possuem captura disponível no tabuleiro atual.
+     * Usado para aplicar a Regra do Assopro (Pedra Assoprada) caso o jogador mova sem comer.
+     */
+    function getPiecesWithCaptureAvailable(color, board = boardState) {
+      const list = [];
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const p = board[r][c];
+          if (p && p.color === color) {
+            const trees = getCaptureTreesForPiece(r, c, p.type, p.color, board, new Set());
+            if (trees.length > 0) {
+              let maxChain = 0;
+              for (const t of trees) {
+                if (t.maxChainCount > maxChain) maxChain = t.maxChainCount;
+              }
+              list.push({ r, c, maxChainCount: maxChain, trees });
+            }
           }
         }
       }
-
-      return legal;
+      // Ordenar pela maior cadeia de captura primeiro
+      list.sort((a, b) => b.maxChainCount - a.maxChainCount);
+      return list;
     }
 
-    function getAllLegalMoves(color) {
+    /**
+     * Retorna os movimentos disponíveis para a peça em (r, c).
+     * Pela Regra do Assopro (Dama Tradicional Brasileira):
+     * - O jogador pode escolher tanto capturar quanto mover outra pedra normalmente.
+     * - Porém, se houver captura disponível e ele não comer (mover outra pedra ou andar sem capturar),
+     *   a pedra que deixou de comer é "assoprada" (eliminada do jogo)!
+     */
+    function getLegalMovesForPiece(r, c, board = boardState) {
+      const piece = board[r][c];
+      if (!piece) return [];
+
+      // Se estamos no meio de uma captura múltipla em cadeia já iniciada, a mesma pedra conclui o salto
+      if (activeChainSquare && board === boardState) {
+        if (r !== activeChainSquare.r || c !== activeChainSquare.c) {
+          return [];
+        }
+        const trees = getCaptureTreesForPiece(r, c, piece.type, piece.color, board, chainCapturedSet);
+        let maxChain = 0;
+        for (const t of trees) {
+          if (t.maxChainCount > maxChain) maxChain = t.maxChainCount;
+        }
+        return trees.filter((t) => t.maxChainCount === maxChain);
+      }
+
+      const captureMoves = getCaptureTreesForPiece(r, c, piece.type, piece.color, board, new Set());
+      const simpleMoves = getSimpleMovesForPiece(r, c, board);
+      return [...captureMoves, ...simpleMoves];
+    }
+
+    function getAllLegalMoves(color, board = boardState) {
       const all = [];
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
-          const p = boardState[r][c];
+          const p = board[r][c];
           if (p && p.color === color) {
-            const moves = getLegalMovesForPiece(r, c);
+            const moves = getLegalMovesForPiece(r, c, board);
             for (const m of moves) {
-              all.push({ fromR: r, fromC: c, toR: m.r, toC: m.c, capture: m.capture });
+              all.push({
+                fromR: r,
+                fromC: c,
+                toR: m.r,
+                toC: m.c,
+                capture: m.capture,
+                capturedR: m.capturedR,
+                capturedC: m.capturedC,
+                maxChainCount: m.maxChainCount
+              });
             }
           }
         }
@@ -1970,7 +2163,7 @@ export function initWizardChess() {
     }
 
     // =========================================================================
-    // Square Highlights
+    // Square Highlights (Anéis Dourados, Destinos Simples em Azul e Capturas em Carmesim)
     // =========================================================================
     function clearSquareHighlights() {
       while (squareHighlightsGroup.children.length > 0) {
@@ -1991,12 +2184,36 @@ export function initWizardChess() {
       for (const m of moves) {
         const pos = boardToWorld(m.r, m.c);
         if (m.capture) {
+          // Anel carmesim na casa de pouso do salto
           const capGeo = new THREE.RingGeometry(0.12, 0.16, 32);
           capGeo.rotateX(-Math.PI / 2);
           const capMat = new THREE.MeshBasicMaterial({ color: 0xe63946, side: THREE.DoubleSide });
           const capMesh = new THREE.Mesh(capGeo, capMat);
           capMesh.position.set(pos.x, BOARD_SURFACE_Y + 0.012, pos.z);
           squareHighlightsGroup.add(capMesh);
+
+          // Ponto central dourado na casa de pouso e anel de alerta sobre a peça adversária que será comida
+          const centerGeo = new THREE.CircleGeometry(0.065, 24);
+          centerGeo.rotateX(-Math.PI / 2);
+          const centerMat = new THREE.MeshBasicMaterial({ color: 0xf5d76e, side: THREE.DoubleSide });
+          const centerMesh = new THREE.Mesh(centerGeo, centerMat);
+          centerMesh.position.set(pos.x, BOARD_SURFACE_Y + 0.013, pos.z);
+          squareHighlightsGroup.add(centerMesh);
+
+          if (typeof m.capturedR === 'number' && m.capturedR >= 0) {
+            const vicPos = boardToWorld(m.capturedR, m.capturedC);
+            const vicGeo = new THREE.RingGeometry(0.13, 0.165, 32);
+            vicGeo.rotateX(-Math.PI / 2);
+            const vicMat = new THREE.MeshBasicMaterial({
+              color: 0xe63946,
+              transparent: true,
+              opacity: 0.72,
+              side: THREE.DoubleSide
+            });
+            const vicMesh = new THREE.Mesh(vicGeo, vicMat);
+            vicMesh.position.set(vicPos.x, BOARD_SURFACE_Y + 0.011, vicPos.z);
+            squareHighlightsGroup.add(vicMesh);
+          }
         } else {
           const dotGeo = new THREE.CircleGeometry(0.06, 24);
           dotGeo.rotateX(-Math.PI / 2);
@@ -2014,15 +2231,747 @@ export function initWizardChess() {
     }
 
     // =========================================================================
-    // Stone Shatter Debris Physics (Shared VBO to avoid mid-attack GPU buffer allocation)
+    // Stone Shatter Debris Physics, 3D Magic Dust & Golden Sparks Particle System
     // =========================================================================
     const sharedShardGeo = new THREE.DodecahedronGeometry(1, 0);
+    const magicParticleSystems = [];
 
-    function spawnStoneShatter(worldPos, color) {
+    function createMagicSparkTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const grad = ctx.createRadialGradient(32, 32, 1, 32, 32, 30);
+        grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+        grad.addColorStop(0.22, 'rgba(255, 240, 175, 0.95)');
+        grad.addColorStop(0.52, 'rgba(245, 195, 68, 0.48)');
+        grad.addColorStop(1.0, 'rgba(212, 140, 20, 0.0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 64, 64);
+
+        // Brilho estelar cruzado sutil no núcleo da fagulha
+        ctx.strokeStyle = 'rgba(255, 252, 230, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(32, 8);
+        ctx.lineTo(32, 56);
+        ctx.moveTo(8, 32);
+        ctx.lineTo(56, 32);
+        ctx.stroke();
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    const magicSparkTexture = createMagicSparkTexture();
+    const shockwaveRingGeo = new THREE.RingGeometry(0.05, 0.13, 36);
+    shockwaveRingGeo.rotateX(-Math.PI / 2);
+    const sparkStreakGeo = new THREE.ConeGeometry(0.012, 0.11, 6);
+    sparkStreakGeo.rotateX(Math.PI / 2);
+    const UP_AXIS = new THREE.Vector3(0, 0, 1);
+
+    function clearMagicParticles() {
+      for (let i = magicParticleSystems.length - 1; i >= 0; i--) {
+        const sys = magicParticleSystems[i];
+        if (sys.emitterGroup) {
+          scene.remove(sys.emitterGroup);
+          sys.emitterGroup.traverse((child) => {
+            if (child.geometry && child.geometry !== shockwaveRingGeo && child.geometry !== sparkStreakGeo) {
+              child.geometry.dispose?.();
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach((m) => m.dispose?.());
+              } else {
+                child.material.dispose?.();
+              }
+            }
+          });
+        }
+        if (sys.points) {
+          scene.remove(sys.points);
+          sys.points.geometry?.dispose();
+          sys.points.material?.dispose();
+        }
+        if (sys.shockwave) {
+          scene.remove(sys.shockwave);
+          sys.shockwave.material?.dispose();
+        }
+      }
+      magicParticleSystems.length = 0;
+    }
+
+    /**
+     * Cria um grupo 3D customizado de emissores de luz (`THREE.Group` com `PointLight`s móveis e halos)
+     * e faíscas douradas balísticas sincronizadas com os vetores de estilhaçamento da pedra no local exato da captura.
+     */
+    function spawnCaptureMagicParticles(worldPos, capturedColor = 'b', sharedShardVectors = [], impactDir = null) {
+      const emitterGroup = new THREE.Group();
+      emitterGroup.name = 'CaptureLightAndSparkEmitterGroup';
+      emitterGroup.position.copy(worldPos);
+      scene.add(emitterGroup);
+
+      // 1. Grupo de Emissores de Luz Dinâmicos no ponto exato da captura
+      // Emissor central de ruptura da pedra
+      const coreLight = new THREE.PointLight(0xffdf73, 9.5, 2.9, 1.7);
+      coreLight.position.set(0, 0.16, 0);
+      emitterGroup.add(coreLight);
+
+      const coreHaloMat = new THREE.SpriteMaterial({
+        map: magicSparkTexture,
+        color: 0xffe885,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const coreHalo = new THREE.Sprite(coreHaloMat);
+      coreHalo.position.set(0, 0.16, 0);
+      coreHalo.scale.set(0.52, 0.52, 1);
+      emitterGroup.add(coreHalo);
+
+      // Emissores móveis de luz dourada/âmbar que acompanham os vetores principais dos estilhaços da pedra
+      const lightEmitters = [];
+      const emitterColors = [0xfff3b0, 0xf5d76e, 0xffb703, 0xfb8500];
+      for (let eIdx = 0; eIdx < 4; eIdx++) {
+        const eColor = emitterColors[eIdx % emitterColors.length];
+        const ptLight = new THREE.PointLight(eColor, 4.2, 1.55, 1.8);
+        const spMat = new THREE.SpriteMaterial({
+          map: magicSparkTexture,
+          color: eColor,
+          transparent: true,
+          opacity: 0.92,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const glowSprite = new THREE.Sprite(spMat);
+        glowSprite.scale.set(0.24, 0.24, 1);
+        ptLight.add(glowSprite);
+
+        // Coordenar direção com os fragmentos físicos da pedra estilhaçada
+        const refVec = sharedShardVectors[eIdx];
+        const angle = (eIdx / 4) * Math.PI * 2 + Math.random() * 0.45;
+        const vel = refVec
+          ? refVec.clone().multiplyScalar(0.92)
+          : new THREE.Vector3(
+              Math.cos(angle) * (0.95 + Math.random() * 0.75),
+              1.15 + Math.random() * 0.95,
+              Math.sin(angle) * (0.95 + Math.random() * 0.75)
+            );
+
+        ptLight.position.set(
+          Math.cos(angle) * 0.05,
+          0.12 + Math.random() * 0.1,
+          Math.sin(angle) * 0.05
+        );
+        emitterGroup.add(ptLight);
+
+        lightEmitters.push({
+          light: ptLight,
+          sprite: glowSprite,
+          vel,
+          baseIntensity: 4.2,
+          phase: Math.random() * Math.PI * 2
+        });
+      }
+
+      // 2. Faíscas Douradas 3D Alongadas (Streaks) coordenadas com os fragmentos da pedra
+      const sparkStreaks = [];
+      const streakCount = 18;
+      for (let sIdx = 0; sIdx < streakCount; sIdx++) {
+        const streakMat = new THREE.MeshBasicMaterial({
+          color: sIdx % 3 === 0 ? 0xfff8d6 : sIdx % 2 === 0 ? 0xf5d76e : 0xffaa00,
+          transparent: true,
+          opacity: 0.96,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const streakMesh = new THREE.Mesh(sparkStreakGeo, streakMat);
+        const shardRef = sharedShardVectors[sIdx % Math.max(1, sharedShardVectors.length)];
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1.2 + Math.random() * 2.1;
+        const vel = shardRef
+          ? new THREE.Vector3(
+              shardRef.x * (0.85 + Math.random() * 0.5),
+              shardRef.y * (0.9 + Math.random() * 0.45),
+              shardRef.z * (0.85 + Math.random() * 0.5)
+            )
+          : new THREE.Vector3(
+              Math.cos(angle) * speed + (impactDir ? impactDir.x * 0.55 : 0),
+              1.1 + Math.random() * 2.1,
+              Math.sin(angle) * speed + (impactDir ? impactDir.z * 0.55 : 0)
+            );
+
+        streakMesh.position.set(
+          (Math.random() - 0.5) * 0.12,
+          0.08 + Math.random() * 0.22,
+          (Math.random() - 0.5) * 0.12
+        );
+        emitterGroup.add(streakMesh);
+        sparkStreaks.push({
+          mesh: streakMesh,
+          vel,
+          life: 0.75 + Math.random() * 0.65,
+          maxLife: 1.4
+        });
+      }
+
+      // 3. Nuvem de Partículas 3D Customizada (128 partículas: Faíscas Douradas + Poeira Mística + Brasa de Impacto)
+      const count = 128;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      const baseColors = new Float32Array(count * 3);
+      const velocities = new Float32Array(count * 3);
+      const kinds = new Uint8Array(count); // 0 = faísca dourada balística, 1 = vórtice de poeira luminosa, 2 = brasa acoplada aos estilhaços
+      const phases = new Float32Array(count);
+      const lifetimes = new Float32Array(count);
+
+      const palette = [
+        new THREE.Color(0xfff8dc), // Ouro branco incandescente
+        new THREE.Color(0xf5d76e), // Ouro real brilhante
+        new THREE.Color(0xffb703), // Âmbar dourado
+        new THREE.Color(0xfb8500), // Brasa mágica
+        capturedColor === 'w' ? new THREE.Color(0xfff0c2) : new THREE.Color(0xffd166)
+      ];
+
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        const kind = i < 64 ? 0 : i < 100 ? 1 : 2;
+        kinds[i] = kind;
+        phases[i] = Math.random() * Math.PI * 2;
+
+        const angle = Math.random() * Math.PI * 2;
+        const radius = (kind === 1 ? 0.04 : 0.015) + Math.random() * (kind === 1 ? 0.16 : 0.085);
+        positions[i3] = worldPos.x + Math.cos(angle) * radius;
+        positions[i3 + 1] = worldPos.y + 0.05 + Math.random() * 0.25;
+        positions[i3 + 2] = worldPos.z + Math.sin(angle) * radius;
+
+        if (kind === 1) {
+          // Poeira mágica ascendente em espiral ao redor da casa capturada
+          const outSpeed = 0.20 + Math.random() * 0.58;
+          velocities[i3] = Math.cos(angle) * outSpeed;
+          velocities[i3 + 1] = 0.52 + Math.random() * 1.05;
+          velocities[i3 + 2] = Math.sin(angle) * outSpeed;
+          lifetimes[i] = 1.4 + Math.random() * 0.75;
+        } else if (kind === 2 && sharedShardVectors.length > 0) {
+          // Brasas douradas sincronizadas diretamente com os vetores dos fragmentos de pedra estilhaçada
+          const sv = sharedShardVectors[i % sharedShardVectors.length];
+          velocities[i3] = sv.x * (0.92 + Math.random() * 0.25);
+          velocities[i3 + 1] = sv.y * (0.95 + Math.random() * 0.25);
+          velocities[i3 + 2] = sv.z * (0.92 + Math.random() * 0.25);
+          lifetimes[i] = 1.05 + Math.random() * 0.7;
+        } else {
+          // Faíscas douradas rápidas com impulso direcional do golpe
+          const outSpeed = 0.95 + Math.random() * 2.35;
+          const biasX = impactDir ? impactDir.x * 0.65 : 0;
+          const biasZ = impactDir ? impactDir.z * 0.65 : 0;
+          velocities[i3] = Math.cos(angle) * outSpeed + biasX;
+          velocities[i3 + 1] = 1.05 + Math.random() * 2.4;
+          velocities[i3 + 2] = Math.sin(angle) * outSpeed + biasZ;
+          lifetimes[i] = 0.9 + Math.random() * 0.8;
+        }
+
+        const c = palette[Math.floor(Math.random() * palette.length)];
+        baseColors[i3] = c.r;
+        baseColors[i3 + 1] = c.g;
+        baseColors[i3 + 2] = c.b;
+        colors[i3] = c.r;
+        colors[i3 + 1] = c.g;
+        colors[i3 + 2] = c.b;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      const mat = new THREE.PointsMaterial({
+        size: 0.098,
+        map: magicSparkTexture,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1.0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        sizeAttenuation: true
+      });
+
+      const points = new THREE.Points(geo, mat);
+      points.frustumCulled = false;
+      scene.add(points);
+
+      // Onda de choque circular dourada rente à casa exata da captura
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xf5d76e,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const shockwave = new THREE.Mesh(shockwaveRingGeo, ringMat);
+      shockwave.position.set(worldPos.x, BOARD_SURFACE_Y + 0.014, worldPos.z);
+      shockwave.scale.setScalar(0.55);
+      scene.add(shockwave);
+
+      magicParticleSystems.push({
+        emitterGroup,
+        coreLight,
+        coreHalo,
+        lightEmitters,
+        sparkStreaks,
+        points,
+        shockwave,
+        origin: worldPos.clone(),
+        positions,
+        colors,
+        baseColors,
+        velocities,
+        kinds,
+        phases,
+        lifetimes,
+        count,
+        elapsed: 0,
+        maxLife: 2.2
+      });
+    }
+
+    // =========================================================================
+    // Procedural Web Audio API Sound Engine (Pedra, Captura, Fagulhas, Coroação e Catedral)
+    // =========================================================================
+    let soundEnabled = true;
+    let audioCtx = null;
+    let noiseBuffer = null;
+    let ambienceStarted = false;
+    let ambienceGainNode = null;
+
+    function getAudioContext() {
+      if (!soundEnabled) return null;
+      if (!audioCtx && typeof window !== 'undefined') {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+          try {
+            audioCtx = new Ctx();
+          } catch (e) {
+            return null;
+          }
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+      if (audioCtx && !noiseBuffer) {
+        const sr = audioCtx.sampleRate;
+        noiseBuffer = audioCtx.createBuffer(1, sr * 2, sr);
+        const data = noiseBuffer.getChannelData(0);
+        let lastOut = 0.0;
+        for (let i = 0; i < data.length; i++) {
+          const white = Math.random() * 2 - 1;
+          // Ruído marrom/rosa filtrado para textura realista de pedra e fogo
+          data[i] = (lastOut + 0.045 * white) / 1.045;
+          lastOut = data[i];
+        }
+      }
+      if (audioCtx && !ambienceStarted && audioCtx.state === 'running') {
+        startCathedralAmbience();
+      }
+      return audioCtx;
+    }
+
+    function startCathedralAmbience() {
+      if (!audioCtx || ambienceStarted) return;
+      try {
+        ambienceStarted = true;
+        const masterAmb = audioCtx.createGain();
+        masterAmb.gain.value = soundEnabled ? 0.032 : 0.0;
+        masterAmb.connect(audioCtx.destination);
+        ambienceGainNode = masterAmb;
+
+        // Ressonância acústica grave do santuário gótico (D2 + A2 suave)
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        osc1.type = 'sine';
+        osc2.type = 'triangle';
+        osc1.frequency.value = 73.42; // D2
+        osc2.frequency.value = 110.0; // A2
+
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 165;
+
+        osc1.connect(filter);
+        osc2.connect(filter);
+        filter.connect(masterAmb);
+        osc1.start();
+        osc2.start();
+      } catch (e) {}
+    }
+
+    function toggleSound(forceState) {
+      soundEnabled = typeof forceState === 'boolean' ? forceState : !soundEnabled;
+      const btnSound = document.getElementById('btn-sound-toggle');
+      if (btnSound) {
+        btnSound.textContent = soundEnabled ? 'Som: Ligado [M]' : 'Som: Mudo [M]';
+        btnSound.classList.toggle('active', soundEnabled);
+      }
+      if (soundEnabled) {
+        const ctx = getAudioContext();
+        if (ambienceGainNode && ctx) {
+          ambienceGainNode.gain.setTargetAtTime(0.032, ctx.currentTime, 0.15);
+        }
+        playSelectSound(false);
+      } else if (ambienceGainNode && audioCtx) {
+        ambienceGainNode.gain.setTargetAtTime(0.0, audioCtx.currentTime, 0.08);
+      }
+      return soundEnabled;
+    }
+
+    // Desbloquear AudioContext no primeiro clique/toque do jogador
+    window.addEventListener(
+      'pointerdown',
+      () => {
+        if (soundEnabled) getAudioContext();
+      },
+      { passive: true }
+    );
+
+    function playSelectSound(isDama = false) {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      try {
+        const now = ctx.currentTime;
+        // Toque seco em pedra esculpida
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = isDama ? 'triangle' : 'sine';
+        const baseFreq = isDama ? 520 : 310;
+        osc.frequency.setValueAtTime(baseFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.45, now + 0.065);
+
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.095);
+
+        // Harmônico dourado extra ao selecionar uma Dama coroada
+        if (isDama) {
+          const bell = ctx.createOscillator();
+          const bellGain = ctx.createGain();
+          bell.type = 'sine';
+          bell.frequency.setValueAtTime(1046.5, now); // C6
+          bellGain.gain.setValueAtTime(0.07, now);
+          bellGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.28);
+          bell.connect(bellGain);
+          bellGain.connect(ctx.destination);
+          bell.start(now);
+          bell.stop(now + 0.29);
+        }
+      } catch (e) {}
+    }
+
+    function playStoneSlideSound(durationSec = 0.55, isDama = false) {
+      const ctx = getAudioContext();
+      if (!ctx || !noiseBuffer) return;
+      try {
+        const now = ctx.currentTime;
+        const dur = Math.max(0.25, Math.min(1.4, durationSec));
+        const src = ctx.createBufferSource();
+        src.buffer = noiseBuffer;
+        src.loop = true;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(isDama ? 420 : 320, now);
+        filter.frequency.linearRampToValueAtTime(isDama ? 540 : 390, now + dur * 0.6);
+        filter.frequency.linearRampToValueAtTime(260, now + dur);
+        filter.Q.value = 2.4;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.18, now + 0.06);
+        gain.gain.setValueAtTime(0.16, now + dur * 0.75);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(now);
+        src.stop(now + dur + 0.02);
+      } catch (e) {}
+    }
+
+    function playStoneSettleSound(isDama = false) {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      try {
+        const now = ctx.currentTime;
+        // Impacto grave da base de pedra pousando no altar
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(isDama ? 145 : 125, now);
+        osc.frequency.exponentialRampToValueAtTime(42, now + 0.11);
+
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.14);
+      } catch (e) {}
+    }
+
+    function playWeaponSwingSound() {
+      const ctx = getAudioContext();
+      if (!ctx || !noiseBuffer) return;
+      try {
+        const now = ctx.currentTime;
+        const src = ctx.createBufferSource();
+        src.buffer = noiseBuffer;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(280, now);
+        filter.frequency.exponentialRampToValueAtTime(1150, now + 0.12);
+        filter.frequency.exponentialRampToValueAtTime(340, now + 0.24);
+        filter.Q.value = 1.8;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.24, now + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(now);
+        src.stop(now + 0.26);
+      } catch (e) {}
+    }
+
+    function playStoneShatterAndSparksSound() {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      try {
+        const now = ctx.currentTime;
+
+        // 1. Impacto sísmico da pedra sendo destruída
+        const subOsc = ctx.createOscillator();
+        const subGain = ctx.createGain();
+        subOsc.type = 'sine';
+        subOsc.frequency.setValueAtTime(110, now);
+        subOsc.frequency.exponentialRampToValueAtTime(28, now + 0.32);
+        subGain.gain.setValueAtTime(0.45, now);
+        subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        subOsc.connect(subGain);
+        subGain.connect(ctx.destination);
+        subOsc.start(now);
+        subOsc.stop(now + 0.36);
+
+        // 2. Estalo de rocha rachando + fragmentos quicando no tabuleiro
+        if (noiseBuffer) {
+          for (let b = 0; b < 5; b++) {
+            const delay = b * 0.055 + (Math.random() * 0.025);
+            const src = ctx.createBufferSource();
+            src.buffer = noiseBuffer;
+
+            const bp = ctx.createBiquadFilter();
+            bp.type = 'bandpass';
+            bp.frequency.setValueAtTime(550 + b * 240, now + delay);
+            bp.Q.value = 2.2;
+
+            const g = ctx.createGain();
+            const amp = 0.28 * Math.pow(0.68, b);
+            g.gain.setValueAtTime(amp, now + delay);
+            g.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.14);
+
+            src.connect(bp);
+            bp.connect(g);
+            g.connect(ctx.destination);
+            src.start(now + delay);
+            src.stop(now + delay + 0.15);
+          }
+        }
+
+        // 3. Cintilação mágica das fagulhas douradas e poeira mística (arpejo cristalino agudo)
+        const sparkFreqs = [1174.66, 1479.98, 1760.0, 2217.46, 2637.02]; // D6, F#6, A6, C#7, E7
+        for (let s = 0; s < sparkFreqs.length; s++) {
+          const t0 = now + 0.03 + s * 0.048;
+          const sparkOsc = ctx.createOscillator();
+          const sparkGain = ctx.createGain();
+          sparkOsc.type = 'sine';
+          sparkOsc.frequency.setValueAtTime(sparkFreqs[s], t0);
+          sparkOsc.frequency.exponentialRampToValueAtTime(sparkFreqs[s] * 1.03, t0 + 0.28);
+
+          sparkGain.gain.setValueAtTime(0.055 * Math.pow(0.85, s), t0);
+          sparkGain.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.32);
+
+          sparkOsc.connect(sparkGain);
+          sparkGain.connect(ctx.destination);
+          sparkOsc.start(t0);
+          sparkOsc.stop(t0 + 0.34);
+        }
+      } catch (e) {}
+    }
+
+    function playCoronationSound() {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      try {
+        const now = ctx.currentTime;
+        // Acorde triunfal dourado quando a Pedra se transforma na Rainha (Dama)
+        const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51]; // C5, E5, G5, C6, E6
+        notes.forEach((freq, idx) => {
+          const t0 = now + idx * 0.075;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = idx % 2 === 0 ? 'triangle' : 'sine';
+          osc.frequency.setValueAtTime(freq, t0);
+
+          gain.gain.setValueAtTime(0.001, t0);
+          gain.gain.linearRampToValueAtTime(0.11, t0 + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.95);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t0);
+          osc.stop(t0 + 0.98);
+        });
+      } catch (e) {}
+    }
+
+    function playVictorySound() {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      try {
+        const now = ctx.currentTime;
+        // Fanfarra solene de vitória na catedral
+        const chord = [261.63, 329.63, 392.0, 523.25, 659.25, 783.99];
+        chord.forEach((freq, idx) => {
+          const t0 = now + idx * 0.09;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = idx < 2 ? 'sawtooth' : 'triangle';
+          osc.frequency.setValueAtTime(freq, t0);
+
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = 1800;
+
+          gain.gain.setValueAtTime(0.001, t0);
+          gain.gain.linearRampToValueAtTime(idx < 2 ? 0.06 : 0.095, t0 + 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.0008, t0 + 1.65);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t0);
+          osc.stop(t0 + 1.7);
+        });
+      } catch (e) {}
+    }
+
+    function playAssoproSound() {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      try {
+        const now = ctx.currentTime;
+        // Rajada de sopro de vento ("assopro") + dissipação mágica
+        if (noiseBuffer) {
+          const src = ctx.createBufferSource();
+          src.buffer = noiseBuffer;
+
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(220, now);
+          filter.frequency.exponentialRampToValueAtTime(980, now + 0.18);
+          filter.frequency.exponentialRampToValueAtTime(190, now + 0.52);
+          filter.Q.value = 1.6;
+
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.36, now + 0.09);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+          src.connect(filter);
+          filter.connect(gain);
+          gain.connect(ctx.destination);
+          src.start(now);
+          src.stop(now + 0.56);
+        }
+
+        // Acorde descendente de penalidade ("pedra assoprada")
+        const tones = [587.33, 440.0, 329.63]; // D5 -> A4 -> E4
+        tones.forEach((freq, i) => {
+          const t0 = now + i * 0.08;
+          const osc = ctx.createOscillator();
+          const g = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, t0);
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.88, t0 + 0.22);
+          g.gain.setValueAtTime(0.09, t0);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.24);
+          osc.connect(g);
+          g.connect(ctx.destination);
+          osc.start(t0);
+          osc.stop(t0 + 0.25);
+        });
+      } catch (e) {}
+    }
+
+    function assoprarPedra(r, c) {
+      const blownPiece = boardState[r]?.[c];
+      if (!blownPiece) return false;
+      const worldPos = boardToWorld(r, c);
+      if (blownPiece.mesh) {
+        scene.remove(blownPiece.mesh);
+      }
+      boardState[r][c] = null;
+      if (blownPiece.color === 'w') {
+        capturedByBlack += 1;
+      } else {
+        capturedByWhite += 1;
+      }
+      assopradaCount += 1;
+      const sqName = coordToSquareName(r, c);
+      const sideLabel = blownPiece.color === 'w' ? 'Branca' : 'Preta';
+      const pieceLabel = blownPiece.type === 'queen' ? 'Dama' : 'Pedra';
+      const blownEntry = {
+        id: assopradaCount,
+        moveNumber: moveHistory.length,
+        color: blownPiece.color,
+        pieceType: blownPiece.type,
+        pieceLabel: `${pieceLabel} ${sideLabel}`,
+        square: sqName,
+        r,
+        c
+      };
+      assopradasHistory.push(blownEntry);
+      if (moveHistory.length > 0) {
+        const lastEntry = moveHistory[moveHistory.length - 1];
+        if (lastEntry && lastEntry.move) {
+          lastEntry.move.assoprada = blownEntry;
+        }
+      }
+      lastAssoproNotice = `💨 ${pieceLabel} ${sideLabel} (${sqName}) Assoprada! (Eliminada por não comer)`;
+      spawnStoneShatter(worldPos, blownPiece.color);
+      playAssoproSound();
+      return true;
+    }
+
+    function spawnStoneShatter(worldPos, color, impactDir = null) {
       const mat = color === 'w' ? whitePieceMat : blackPieceMat;
-      for (let i = 0; i < 32; i++) {
+      const sharedShardVectors = [];
+      for (let i = 0; i < 34; i++) {
         const sz = 0.024 + Math.random() * 0.048;
-        const frag = new THREE.Mesh(sharedShardGeo, mat);
+        // Alguns fragmentos recebem veio dourado incandescente para coordenar com as faíscas
+        const useGoldVein = i % 7 === 0;
+        const frag = new THREE.Mesh(sharedShardGeo, useGoldVein ? damaCrownGoldMat : mat);
         frag.scale.setScalar(sz);
         frag.position.set(
           worldPos.x + (Math.random() - 0.5) * 0.16,
@@ -2031,14 +2980,20 @@ export function initWizardChess() {
         );
         frag.castShadow = true;
         scene.add(frag);
+
+        const dirBiasX = impactDir ? impactDir.x * (0.45 + Math.random() * 0.65) : 0;
+        const dirBiasZ = impactDir ? impactDir.z * (0.45 + Math.random() * 0.65) : 0;
+        const vel = new THREE.Vector3(
+          (Math.random() - 0.5) * 2.2 + dirBiasX,
+          1.25 + Math.random() * 2.05,
+          (Math.random() - 0.5) * 2.2 + dirBiasZ
+        );
+        sharedShardVectors.push(vel.clone());
+
         shatterDebris.push({
           mesh: frag,
           baseScale: sz,
-          vel: new THREE.Vector3(
-            (Math.random() - 0.5) * 2.2,
-            1.2 + Math.random() * 2.0,
-            (Math.random() - 0.5) * 2.2
-          ),
+          vel,
           rotVel: new THREE.Vector3(
             Math.random() * 9,
             Math.random() * 9,
@@ -2047,8 +3002,44 @@ export function initWizardChess() {
           life: 2.2
         });
       }
+      // Disparar o grupo de emissores de luz e faíscas douradas sincronizado com os vetores de estilhaçamento
+      spawnCaptureMagicParticles(worldPos, color, sharedShardVectors, impactDir);
+      playStoneShatterAndSparksSound();
       impactFlashLight.position.set(worldPos.x, worldPos.y + 0.4, worldPos.z);
-      impactFlashLight.intensity = 7.5;
+      impactFlashLight.intensity = 7.8;
+    }
+
+    function spawnCoronationBurst(worldPos) {
+      spawnCaptureMagicParticles(worldPos, 'w');
+      playCoronationSound();
+      for (let i = 0; i < 20; i++) {
+        const sz = 0.018 + Math.random() * 0.028;
+        const spark = new THREE.Mesh(sharedShardGeo, damaCrownGoldMat);
+        spark.scale.setScalar(sz);
+        spark.position.set(
+          worldPos.x + (Math.random() - 0.5) * 0.20,
+          worldPos.y + 0.08 + Math.random() * 0.35,
+          worldPos.z + (Math.random() - 0.5) * 0.20
+        );
+        scene.add(spark);
+        shatterDebris.push({
+          mesh: spark,
+          baseScale: sz,
+          vel: new THREE.Vector3(
+            (Math.random() - 0.5) * 1.6,
+            1.5 + Math.random() * 1.8,
+            (Math.random() - 0.5) * 1.6
+          ),
+          rotVel: new THREE.Vector3(
+            Math.random() * 10,
+            Math.random() * 10,
+            Math.random() * 10
+          ),
+          life: 1.6
+        });
+      }
+      impactFlashLight.position.set(worldPos.x, worldPos.y + 0.5, worldPos.z);
+      impactFlashLight.intensity = 8.5;
     }
 
     // =========================================================================
@@ -2056,57 +3047,94 @@ export function initWizardChess() {
     // =========================================================================
     const PIECE_HEIGHTS = {
       pawn: 0.36,
-      rook: 0.46,
-      knight: 0.50,
-      bishop: 0.51,
-      queen: 0.55,
-      king: 0.59
+      queen: 0.55
     };
-    const MIN_PIECE_SEP = 0.318; // Stone pedestal diameter is ~0.29m; 0.318m enforces a solid concrete gap
-    const MELEE_STANDOFF = 0.36; // Optimal melee standoff (1.06 squares) so sword blades visibly bridge the gap and cleave into defender before burst
+    const MIN_PIECE_SEP = 0.318;
+    const MELEE_STANDOFF = 0.34;
 
     // =========================================================================
-    // Smooth Attack Camera & Move Execution Choreography
+    // Smooth Jump-Capture Camera & Move Execution Choreography (Damas Brasileiras)
     // =========================================================================
+    function findCapturedSquareAlongDiagonal(fromR, fromC, toR, toC, attackerColor) {
+      const dr = Math.sign(toR - fromR);
+      const dc = Math.sign(toC - fromC);
+      if (dr === 0 || dc === 0 || Math.abs(toR - fromR) !== Math.abs(toC - fromC)) {
+        return null;
+      }
+      const steps = Math.abs(toR - fromR);
+      for (let s = 1; s < steps; s++) {
+        const cr = fromR + dr * s;
+        const cc = fromC + dc * s;
+        const p = boardState[cr]?.[cc];
+        if (p && p.color !== attackerColor) {
+          return { r: cr, c: cc };
+        }
+      }
+      return null;
+    }
+
     function executeChessMove(fromR, fromC, toR, toC, options = {}) {
       const piece = boardState[fromR]?.[fromC];
       if (!piece || isAnimatingMove || gameOver) return false;
       if (piece.color !== currentTurn) return false;
 
+      // Na Dama, a casa de destino (toR, toC) deve estar sempre vazia
       const targetOnDest = boardState[toR]?.[toC];
-      // Strictly forbid friendly fire (a piece can never move onto or attack a piece of the same color)
-      if (targetOnDest && targetOnDest.color === piece.color) {
+      if (targetOnDest) {
         return false;
       }
 
-      if (!options.fromRemote) {
-        const legalForPiece = getLegalMovesForPiece(fromR, fromC);
-        if (!legalForPiece.some((m) => m.r === toR && m.c === toC)) {
-          return false;
-        }
+      let matchedLegal = null;
+      const legalForPiece = getLegalMovesForPiece(fromR, fromC);
+      matchedLegal = legalForPiece.find((m) => m.r === toR && m.c === toC) || null;
+
+      if (!options.fromRemote && !matchedLegal) {
+        return false;
       }
+
+      // Antes de executar o movimento, verificar quais pedras tinham captura disponível (Regra do Assopro)
+      const preMoveCapturers = !activeChainSquare
+        ? getPiecesWithCaptureAvailable(piece.color, boardState)
+        : [];
+      lastAssoproNotice = '';
+
+      // Identificar a peça adversária saltada/capturada na diagonal entre (fromR, fromC) e (toR, toC)
+      let capCoord = null;
+      if (matchedLegal && matchedLegal.capture && matchedLegal.capturedR >= 0) {
+        capCoord = { r: matchedLegal.capturedR, c: matchedLegal.capturedC };
+      } else {
+        capCoord = findCapturedSquareAlongDiagonal(fromR, fromC, toR, toC, piece.color);
+      }
+
+      const captured = capCoord ? boardState[capCoord.r]?.[capCoord.c] : null;
+      const isCapture = Boolean(captured);
 
       if (preMoveHighlightTask) {
         preMoveHighlightTask = null;
       }
 
-      // Save board state snapshot (including pre-move scriptCursor & scriptDeviated) so Left Arrow / [ can step backward & re-record
+      // Salvar snapshot para desfazer/voltar passo e alimentar o histórico lateral
       moveHistory.push({
         snapshot: captureBoardSnapshot(),
         move: {
+          moveNumber: moveHistory.length + 1,
           color: piece.color,
           pieceType: piece.type,
           fromR,
           fromC,
           toR,
           toC,
-          capture: Boolean(targetOnDest),
-          promotion: options.promotion || 'queen'
+          fromSq: coordToSquareName(fromR, fromC),
+          toSq: coordToSquareName(toR, toC),
+          capture: isCapture,
+          capturedR: capCoord ? capCoord.r : -1,
+          capturedC: capCoord ? capCoord.c : -1,
+          capturedSq: capCoord ? coordToSquareName(capCoord.r, capCoord.c) : null,
+          crowned: false,
+          assoprada: null
         }
       });
 
-      // Advance scriptCursor if executing a scripted move or a manual move matching the script;
-      // otherwise mark scriptDeviated = true and exit scriptedGameActive so the user takes over cleanly
       if (options.fromScript) {
         scriptCursor = Math.min(scriptMoves.length, scriptCursor + 1);
       } else if (!scriptDeviated && scriptCursor < scriptMoves.length) {
@@ -2129,15 +3157,12 @@ export function initWizardChess() {
       }
       if (typeof updateScriptBarUI === 'function') updateScriptBarUI();
 
-      const captured = targetOnDest;
-      const isCapture = Boolean(captured);
       isAnimatingMove = true;
       activeCamTransition = null;
       clearSquareHighlights();
       selectedSquare = null;
       validMoves = [];
 
-      // Broadcast to multiplayer room (cloud API + static BroadcastChannel/localStorage fallback)
       if (gameMode === 'multi' && roomCode && !options.fromRemote) {
         sendMultiplayerMove({
           playerToken,
@@ -2150,6 +3175,7 @@ export function initWizardChess() {
 
       const startPos = boardToWorld(fromR, fromC);
       const endPos = boardToWorld(toR, toC);
+      const victimPos = isCapture && capCoord ? boardToWorld(capCoord.r, capCoord.c) : endPos.clone();
       const dx = endPos.x - startPos.x;
       const dz = endPos.z - startPos.z;
       const dist = Math.hypot(dx, dz) || 1;
@@ -2159,34 +3185,23 @@ export function initWizardChess() {
       piece.mesh.rotation.y = moveHeading;
       playPieceClip(piece, 'Move', true, 0.10);
 
-      // Detect Castling (King moves 2 files horizontally: e1->g1/c1 or e8->g8/c8) and animate the Rook simultaneously
-      const isCastling = piece.type === 'king' && fromR === toR && Math.abs(toC - fromC) === 2;
-      const castleRookFromC = isCastling ? (toC > fromC ? 7 : 0) : -1;
-      const castleRookToC = isCastling ? (toC > fromC ? 5 : 3) : -1;
-      const castleRook = isCastling ? boardState[fromR][castleRookFromC] : null;
-      const castleRookStartPos = castleRook ? boardToWorld(fromR, castleRookFromC) : null;
-      const castleRookEndPos = castleRook ? boardToWorld(fromR, castleRookToC) : null;
-      if (castleRook && castleRook.mesh) {
-        const rDx = castleRookEndPos.x - castleRookStartPos.x;
-        const rDz = castleRookEndPos.z - castleRookStartPos.z;
-        castleRook.mesh.rotation.y = Math.atan2(rDx, rDz);
-        playPieceClip(castleRook, 'Move', true, 0.10);
-      }
-
-      // Defending enemy statue turns to face the incoming attacker shield-to-shield
+      // A peça inimiga que será saltada gira para encarar o atacante
       if (isCapture && captured && captured.mesh) {
         captured.mesh.rotation.y = Math.atan2(-dx, -dz);
       }
 
-      // Full Concrete Standoff Distance for Melee Strike (0.36m for multi-square captures, scaled to 0.76*dist for 1-square captures so attacker always steps forward)
-      const stopOffset = isCapture ? Math.min(MELEE_STANDOFF, dist * 0.76) : 0;
-      const strikePos = new THREE.Vector3(
-        endPos.x - dirX * stopOffset,
-        BOARD_SURFACE_Y,
-        endPos.z - dirZ * stopOffset
-      );
+      // Posição de golpe: imediatamente antes da peça adversária saltada (victimPos)
+      const distToVictim = startPos.distanceTo(victimPos);
+      const stopOffset = isCapture ? Math.min(MELEE_STANDOFF, distToVictim * 0.78) : 0;
+      const strikePos = isCapture
+        ? new THREE.Vector3(
+            victimPos.x - dirX * stopOffset,
+            BOARD_SURFACE_Y,
+            victimPos.z - dirZ * stopOffset
+          )
+        : endPos.clone();
 
-      // Collect all bystander pieces (both friendly and enemy) on the board for concrete collision avoidance
+      // Coletar todas as demais peças no tabuleiro para evitar colisão
       const bystanders = [];
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
@@ -2201,7 +3216,6 @@ export function initWizardChess() {
         }
       }
 
-      // Pre-analyze Knight path vs bystanders so Knights cleanly skirt single blockers or vault high over walls
       const segDx = (isCapture ? strikePos.x : endPos.x) - startPos.x;
       const segDz = (isCapture ? strikePos.z : endPos.z) - startPos.z;
       const segLen = Math.hypot(segDx, segDz) || 0.001;
@@ -2210,70 +3224,23 @@ export function initWizardChess() {
       const segPerpX = -segUz;
       const segPerpZ = segUx;
 
-      let knightLateralSign = 0;
-      let knightVaultPeak = 0;
-      if (piece.type === 'knight') {
-        let blockedPosSide = false;
-        let blockedNegSide = false;
-        let maxBlockerHeight = 0;
-        for (const b of bystanders) {
-          const relX = b.homePos.x - startPos.x;
-          const relZ = b.homePos.z - startPos.z;
-          const proj = relX * segUx + relZ * segUz;
-          if (proj > 0.04 && proj < segLen - 0.04) {
-            const signedPerp = relX * segPerpX + relZ * segPerpZ;
-            if (Math.abs(signedPerp) < MIN_PIECE_SEP) {
-              if (signedPerp >= 0) blockedPosSide = true;
-              if (signedPerp <= 0) blockedNegSide = true;
-              if (b.height > maxBlockerHeight) maxBlockerHeight = b.height;
-            }
-          }
-        }
-        if (blockedPosSide && !blockedNegSide) {
-          knightLateralSign = -1; // Skirt cleanly around the open -perp channel
-        } else if (blockedNegSide && !blockedPosSide) {
-          knightLateralSign = 1;  // Skirt cleanly around the open +perp channel
-        } else if (blockedPosSide && blockedNegSide) {
-          // Solid wall of pieces across both L-channels: vault high above the tallest blocker's crown/helmet
-          knightVaultPeak = maxBlockerHeight + 0.09;
-        }
-      }
-
       function resetBystandersToHome() {
         for (const b of bystanders) {
           b.piece.mesh.position.copy(b.homePos);
         }
       }
 
-      // Concrete 3D Trajectory Solver: enforces zero mesh intersection against all friendly & enemy bystanders
       const isDiagonalSlide =
         Math.abs(toR - fromR) === Math.abs(toC - fromC) &&
-        Math.abs(toR - fromR) >= 1 &&
-        piece.type !== 'knight';
+        Math.abs(toR - fromR) >= 1;
 
       function applyConcreteTrajectory(u, fromVec, toVec) {
         const ease = isCapture ? (0.28 * u + 0.72 * easeInOutCubic(u)) : easeInOutCubic(u);
         let bx = fromVec.x + (toVec.x - fromVec.x) * ease;
         let bz = fromVec.z + (toVec.z - fromVec.z) * ease;
-        let by = BOARD_SURFACE_Y;
-
+        const by = BOARD_SURFACE_Y;
         const archSin = Math.sin(u * Math.PI);
 
-        if (piece.type === 'knight') {
-          if (knightLateralSign !== 0) {
-            // Curve horizontally through the open L-corridor
-            bx += segPerpX * knightLateralSign * 0.165 * archSin;
-            bz += segPerpZ * knightLateralSign * 0.165 * archSin;
-            by = BOARD_SURFACE_Y + archSin * 0.06;
-          } else if (knightVaultPeak > 0) {
-            // Broad, high stone-steed vault that clears the full height of blocking pieces
-            by = BOARD_SURFACE_Y + Math.pow(archSin, 0.65) * knightVaultPeak;
-          } else {
-            by = BOARD_SURFACE_Y + archSin * 0.06;
-          }
-        }
-
-        // Check every bystander (friendly or enemy) for concrete 3D non-penetration
         const effectiveMinSep = isDiagonalSlide ? 0.262 : MIN_PIECE_SEP;
         for (const b of bystanders) {
           const hx = b.homePos.x;
@@ -2282,14 +3249,12 @@ export function initWizardChess() {
           const dHomeZ = bz - hz;
           const dHome = Math.hypot(dHomeX, dHomeZ);
 
-          // If the moving piece is already vertically above this bystander's top + 2.5cm margin, no horizontal push needed
           if (by >= BOARD_SURFACE_Y + b.height + 0.025) {
             b.piece.mesh.position.copy(b.homePos);
             continue;
           }
 
-          // When squeezing diagonally between adjacent pieces, bystanders subtly yield outward within their square
-          if (dHome < 0.36 && dHome > 0.001 && knightVaultPeak === 0) {
+          if (dHome < 0.36 && dHome > 0.001) {
             const yieldProx = Math.max(0, (0.36 - dHome) / 0.36) * archSin;
             const yieldDist = Math.min(0.068, yieldProx * 0.082);
             b.piece.mesh.position.set(
@@ -2301,7 +3266,6 @@ export function initWizardChess() {
             b.piece.mesh.position.copy(b.homePos);
           }
 
-          // Hard concrete cylinder separation against bystander's instantaneous position
           const curBx = b.piece.mesh.position.x;
           const curBz = b.piece.mesh.position.z;
           const sepX = bx - curBx;
@@ -2309,10 +3273,7 @@ export function initWizardChess() {
           const sepDist = Math.hypot(sepX, sepZ);
 
           if (sepDist < effectiveMinSep) {
-            if (piece.type === 'knight' && knightVaultPeak > 0) {
-              // Ensure Knight pedestal bottom clears the blocker's crown/helmet
-              by = Math.max(by, BOARD_SURFACE_Y + b.height + 0.03);
-            } else if (sepDist > 0.0001) {
+            if (sepDist > 0.0001) {
               const push = effectiveMinSep - sepDist;
               bx += (sepX / sepDist) * push;
               bz += (sepZ / sepDist) * push;
@@ -2326,18 +3287,15 @@ export function initWizardChess() {
         piece.mesh.position.set(bx, by, bz);
       }
 
-      // Save Player Camera State for Smooth Eased Entry & Return
-      const savedCamPos = camera.position.clone();
-      const savedTarget = orbitControls.target.clone();
+      const savedCamPos = activeDuelSavedCam ? activeDuelSavedCam.pos.clone() : camera.position.clone();
+      const savedTarget = activeDuelSavedCam ? activeDuelSavedCam.target.clone() : orbitControls.target.clone();
 
-      // Calculate Optimal Unobstructed 3/4 Duel Camera Angle
       const midPoint = new THREE.Vector3(
-        (strikePos.x + endPos.x) * 0.5,
+        (strikePos.x + victimPos.x) * 0.5,
         BOARD_SURFACE_Y + 0.32,
-        (strikePos.z + endPos.z) * 0.5
+        (strikePos.z + victimPos.z) * 0.5
       );
 
-      // Score both perpendicular sides for foreground bystander occlusion across both mid and close camera poses
       const perpA = new THREE.Vector3(-dirZ, 0, dirX);
       const perpB = new THREE.Vector3(dirZ, 0, -dirX);
       const camFromMid = new THREE.Vector3().subVectors(savedCamPos, midPoint);
@@ -2378,8 +3336,6 @@ export function initWizardChess() {
       const chosenPerp =
         scoreDuelPerpOcclusion(prefPerp) > scoreDuelPerpOcclusion(altPerp) + 0.25 ? altPerp : prefPerp;
 
-      // Continuous Quadratic Bezier 3/4 orbit-and-dolly arc (savedCamPos -> duelCamMid -> duelCamClose)
-      // so the attack camera glides in a single unbroken C-infinity sweep across approach + strike without ever stalling at tApproach
       const duelCamMid = new THREE.Vector3(
         midPoint.x + chosenPerp.x * 1.34 - dirX * 0.44,
         BOARD_SURFACE_Y + 0.96,
@@ -2391,9 +3347,9 @@ export function initWizardChess() {
         midPoint.z + chosenPerp.z * 0.92 + dirZ * 0.18
       );
       const duelTargetStart = new THREE.Vector3(
-        strikePos.x + dirX * 0.10,
+        victimPos.x,
         BOARD_SURFACE_Y + 0.34,
-        strikePos.z + dirZ * 0.10
+        victimPos.z
       );
       const duelTargetEnd = new THREE.Vector3(
         endPos.x - dirX * 0.05,
@@ -2427,25 +3383,27 @@ export function initWizardChess() {
         cameraTelemetry.lastSpaceMoveSamples = [];
       }
 
-      // Distance-scaled piece movement duration (slowed by ~12-18% + scaled per square so 4-5 space Bishop/Rook/Queen glides feel weighty and unhurried):
-      // - 1 square move: 0.64s
-      // - 4-5 square move: 1.10s - 1.29s
       const squaresMoved = Math.max(1, Math.hypot(toR - fromR, toC - fromC));
-      const stdMoveDuration = Number((0.64 + Math.max(0, squaresMoved - 1) * 0.14).toFixed(3));
+      const stdMoveDuration = Number((0.58 + Math.max(0, squaresMoved - 1) * 0.12).toFixed(3));
       const atkProfile = ATTACK_SYNC_PROFILES[piece.type] || ATTACK_SYNC_PROFILES.queen;
       const SWING_START_CLIP_TIME = atkProfile.swingStartClip;
-      const CONTACT_CLIP_TIME = atkProfile.contactClip; // Weapon physically strikes defender, triggering flash & flinch
-      const BLOW_CLIP_TIME = atkProfile.blowClip;       // After visible weapon impact, defender explodes into stone shards
+      const CONTACT_CLIP_TIME = atkProfile.contactClip;
+      const BLOW_CLIP_TIME = atkProfile.blowClip;
+      const approachSquares = isCapture && capCoord
+        ? Math.max(1, Math.hypot(capCoord.r - fromR, capCoord.c - fromC))
+        : squaresMoved;
       const tApproach = isCapture
-        ? Number((0.66 + Math.max(0, squaresMoved - 1) * 0.125).toFixed(3))
+        ? Number((0.56 + Math.max(0, approachSquares - 1) * 0.11).toFixed(3))
         : stdMoveDuration;
       const tContact = isCapture ? (tApproach + CONTACT_CLIP_TIME / atkProfile.timeScale) : stdMoveDuration;
       const tImpact = isCapture ? (tApproach + BLOW_CLIP_TIME / atkProfile.timeScale) : stdMoveDuration;
-      const tStrikeDone = isCapture ? (tImpact + 0.48) : stdMoveDuration;
-      // Slower, distance-aware post-attack camera return (~1.30s - 1.60s instead of 0.64s)
+      const tStrikeDone = isCapture ? (tImpact + 0.44) : stdMoveDuration;
       const camReturnDist = savedCamPos.distanceTo(duelCamClose);
-      const returnDuration = isCapture ? Number((1.18 + Math.min(0.42, camReturnDist * 0.10)).toFixed(3)) : 0;
+      const returnDuration = isCapture ? Number((1.05 + Math.min(0.35, camReturnDist * 0.09)).toFixed(3)) : 0;
       const totalDuration = isCapture ? (tStrikeDone + returnDuration) : stdMoveDuration;
+
+      // Efeito sonoro de pedra deslizando sobre o altar
+      playStoneSlideSound(isCapture ? tApproach : stdMoveDuration, piece.type === 'queen');
 
       if (!isCapture) {
         cameraTelemetry.lastSpaceMoveDuration = stdMoveDuration;
@@ -2476,44 +3434,91 @@ export function initWizardChess() {
       function finishMove() {
         resetBystandersToHome();
         boardState[fromR][fromC] = null;
+        if (isCapture && capCoord) {
+          if (captured && captured.mesh) {
+            scene.remove(captured.mesh);
+          }
+          boardState[capCoord.r][capCoord.c] = null;
+        }
         boardState[toR][toC] = piece;
         piece.r = toR;
         piece.c = toC;
         piece.hasMoved = true;
 
-        if (isCastling && castleRook) {
-          boardState[fromR][castleRookFromC] = null;
-          boardState[fromR][castleRookToC] = castleRook;
-          castleRook.r = fromR;
-          castleRook.c = castleRookToC;
-          castleRook.hasMoved = true;
-          if (castleRook.mesh) {
-            castleRook.mesh.position.copy(castleRookEndPos);
-            castleRook.mesh.rotation.y = castleRook.color === 'w' ? Math.PI : 0;
-          }
-          playPieceClip(castleRook, 'Idle', true, 0.18);
-        }
-
-        // Pawn Promotion to Queen
-        if (piece.type === 'pawn' && (toR === 0 || toR === 7)) {
-          scene.remove(piece.mesh);
-          const promoted = instantiatePiece('queen', piece.color, toR, toC);
-          promoted.hasMoved = true;
-          boardState[toR][toC] = promoted;
-        } else {
-          piece.mesh.position.copy(endPos);
-          piece.mesh.rotation.y = piece.color === 'w' ? Math.PI : 0;
-          playPieceClip(piece, 'Idle', true, 0.18);
-        }
-
         if (isCapture) {
           if (piece.color === 'w') capturedByWhite += 1;
           else capturedByBlack += 1;
+          if (capCoord) {
+            chainCapturedSet.add(`${capCoord.r},${capCoord.c}`);
+          }
           activeDuelSavedCam = null;
           camera.position.copy(savedCamPos);
           orbitControls.target.copy(savedTarget);
           orbitControls.enabled = true;
           orbitControls.update();
+        }
+
+        // Verificar se a mesma peça possui capturas adicionais em cadeia (Regra de Captura Múltipla)
+        if (isCapture) {
+          const nextTrees = getCaptureTreesForPiece(
+            toR,
+            toC,
+            piece.type,
+            piece.color,
+            boardState,
+            chainCapturedSet
+          );
+          if (nextTrees.length > 0) {
+            activeChainSquare = { r: toR, c: toC };
+            piece.mesh.position.copy(endPos);
+            piece.mesh.rotation.y = piece.color === 'w' ? Math.PI : 0;
+            playPieceClip(piece, 'Idle', true, 0.18);
+            playStoneSettleSound(piece.type === 'queen');
+
+            isAnimatingMove = false;
+            selectedSquare = { r: toR, c: toC };
+            validMoves = getLegalMovesForPiece(toR, toC);
+            showSquareHighlights(toR, toC, validMoves);
+            updateTurnUI();
+            maybeScheduleAIMove();
+            return;
+          }
+        }
+
+        // Fim da jogada (sem mais capturas em cadeia)
+        activeChainSquare = null;
+        chainCapturedSet.clear();
+
+        // Coroação em Dama: apenas se a pedra comum ('pawn') TERMINAR o turno na última fileira adversária!
+        const promoRow = piece.color === 'w' ? 0 : 7;
+        if (piece.type === 'pawn' && toR === promoRow) {
+          scene.remove(piece.mesh);
+          const promoted = instantiatePiece('queen', piece.color, toR, toC);
+          promoted.hasMoved = true;
+          boardState[toR][toC] = promoted;
+          spawnCoronationBurst(endPos);
+          if (moveHistory.length > 0 && moveHistory[moveHistory.length - 1]?.move) {
+            moveHistory[moveHistory.length - 1].move.crowned = true;
+          }
+        } else {
+          piece.mesh.position.copy(endPos);
+          piece.mesh.rotation.y = piece.color === 'w' ? Math.PI : 0;
+          playPieceClip(piece, 'Idle', true, 0.18);
+          playStoneSettleSound(piece.type === 'queen');
+        }
+
+        // Regra do Assopro (Pedra Assoprada):
+        // Se o jogador tinha captura disponível neste turno e escolheu NÃO comer (!isCapture),
+        // a pedra que não foi usada para comer é assoprada (eliminada do tabuleiro)!
+        if (!isCapture && preMoveCapturers.length > 0 && !options.fromRemote) {
+          // Prioriza assoprar a outra pedra que tinha captura e foi ignorada;
+          // se a própria pedra movida era a única que podia comer e fugiu/andou simples, assopra ela em (toR, toC).
+          const otherCapturer = preMoveCapturers.find((c) => c.r !== fromR || c.c !== fromC);
+          if (otherCapturer) {
+            assoprarPedra(otherCapturer.r, otherCapturer.c);
+          } else {
+            assoprarPedra(toR, toC);
+          }
         }
 
         currentTurn = currentTurn === 'w' ? 'b' : 'w';
@@ -2528,14 +3533,6 @@ export function initWizardChess() {
         if (!isCapture) {
           const u = Math.min(1, elapsed / totalDuration);
           applyConcreteTrajectory(u, startPos, endPos);
-          if (isCastling && castleRook && castleRook.mesh) {
-            const rEase = easeInOutCubic(u);
-            castleRook.mesh.position.set(
-              castleRookStartPos.x + (castleRookEndPos.x - castleRookStartPos.x) * rEase,
-              BOARD_SURFACE_Y + Math.sin(u * Math.PI) * 0.05,
-              castleRookStartPos.z + (castleRookEndPos.z - castleRookStartPos.z) * rEase
-            );
-          }
           const pDelta = piece.mesh.position.distanceTo(prevPiecePos);
           prevPiecePos.copy(piece.mesh.position);
           cameraTelemetry.lastSpaceMoveSamples.push({
@@ -2555,29 +3552,26 @@ export function initWizardChess() {
           return false;
         }
 
-        // Capture Sequence with Continuous C-infinity Quadratic Bezier Camera & Zero-Freeze Piece Choreography
+        // Coreografia de Captura por Salto Diagonal (Aproximação -> Golpe e Estilhaçamento -> Avanço até a casa de pouso vazia)
         let phaseName = 'approach';
         if (elapsed <= tStrikeDone) {
-          // Single unbroken C-infinity camera arc across both approach and strike (never stops at tApproach!)
           const uActive = Math.min(1, elapsed / tStrikeDone);
           const sActive = 0.38 * uActive + 0.62 * easeInOutCubic(uActive);
           evalQuadraticBezier(camera.position, savedCamPos, duelCamMid, duelCamClose, sActive);
           evalQuadraticBezier(orbitControls.target, savedTarget, duelTargetStart, duelTargetEnd, sActive);
 
           if (elapsed <= tApproach) {
-            // Phase 1: Smooth Glide-In to Concrete Standoff Position
             phaseName = 'approach';
             const u = Math.min(1, elapsed / tApproach);
             applyConcreteTrajectory(u, startPos, strikePos);
           } else {
-            // Phase 2: Rigged Attack (Continuous Stalk -> Physical Weapon Impact -> Shatter Burst -> Follow-Through Advance)
             phaseName = 'strike';
             if (!attackAnimStarted) {
               attackAnimStarted = true;
               playPieceClip(piece, 'Attack', false, 0.08);
+              playWeaponSwingSound();
             }
 
-            // Keep any bystanders immediately adjacent to strikePos yielded slightly outward during the weapon swing
             for (const b of bystanders) {
               const dxB = strikePos.x - b.homePos.x;
               const dzB = strikePos.z - b.homePos.z;
@@ -2596,7 +3590,6 @@ export function initWizardChess() {
 
             const atkClipTime = (elapsed - tApproach) * atkProfile.timeScale;
 
-            // Keep attacker continuously moving forward during wind-up stalk, downward strike, and post-shatter follow-through
             if (!shatterTriggered && captured && captured.mesh) {
               const stalkLead = 0.028;
               let lungeOffset = 0;
@@ -2617,18 +3610,17 @@ export function initWizardChess() {
                 strikePos.z + dirZ * lungeOffset
               );
               if (atkClipTime < CONTACT_CLIP_TIME) {
-                captured.mesh.position.copy(endPos);
+                captured.mesh.position.copy(victimPos);
               } else {
-                // Weapon makes physical impact on defender before defender bursts
                 const shoveProgress = Math.min(
                   1,
                   (atkClipTime - CONTACT_CLIP_TIME) / Math.max(0.04, BLOW_CLIP_TIME - CONTACT_CLIP_TIME)
                 );
                 const shoveDist = shoveProgress * 0.045;
                 captured.mesh.position.set(
-                  endPos.x + dirX * shoveDist,
+                  victimPos.x + dirX * shoveDist,
                   BOARD_SURFACE_Y,
-                  endPos.z + dirZ * shoveDist
+                  victimPos.z + dirZ * shoveDist
                 );
               }
 
@@ -2638,7 +3630,6 @@ export function initWizardChess() {
               }
             }
 
-            // Contact: weapon physically strikes defender
             if (
               !defenderFlinchTriggered &&
               (atkClipTime >= CONTACT_CLIP_TIME || elapsed >= tContact + 0.06)
@@ -2647,35 +3638,32 @@ export function initWizardChess() {
               if (captured) {
                 playPieceClip(captured, 'Shatter', false, 0.04);
                 impactFlashLight.position.set(
-                  endPos.x - dirX * 0.08,
+                  victimPos.x - dirX * 0.08,
                   BOARD_SURFACE_Y + 0.28,
-                  endPos.z - dirZ * 0.08
+                  victimPos.z - dirZ * 0.08
                 );
                 impactFlashLight.intensity = 4.5;
               }
             }
 
-            // Blow Burst: after visible weapon impact & follow-through, defender explodes into stone shards!
             if (!shatterTriggered && (atkClipTime >= BLOW_CLIP_TIME || elapsed >= tImpact + 0.06)) {
               shatterTriggered = true;
               impactActualTime = elapsed;
               postShatterPiecePos.copy(piece.mesh.position);
               if (captured && captured.mesh) {
-                const shatterOrigin = captured.mesh.position.clone();
+                const exactCaptureOrigin = victimPos.clone();
                 scene.remove(captured.mesh);
-                spawnStoneShatter(shatterOrigin, captured.color);
+                spawnStoneShatter(exactCaptureOrigin, captured.color, { x: dirX, z: dirZ });
               }
             }
 
-            // Immediately after shattering defender, attacker smoothly begins advancing toward endPos (no post-impact freeze!)
             if (shatterTriggered) {
               const postStrikeSpan = Math.max(0.08, tStrikeDone - impactActualTime);
               const uFollow = Math.min(1, Math.max(0, (elapsed - impactActualTime) / postStrikeSpan));
-              piece.mesh.position.lerpVectors(postShatterPiecePos, endPos, uFollow * 0.38);
+              piece.mesh.position.lerpVectors(postShatterPiecePos, endPos, uFollow * 0.42);
               postStrikePiecePos.copy(piece.mesh.position);
             }
 
-            // Subtle damped perpendicular impact vibration right when the blow shatters the defender
             if (shatterTriggered && elapsed >= impactActualTime && elapsed <= impactActualTime + 0.26) {
               const shakeProgress = (elapsed - impactActualTime) / 0.26;
               const decay = (1 - shakeProgress) * (1 - shakeProgress);
@@ -2684,7 +3672,7 @@ export function initWizardChess() {
             }
           }
         } else {
-          // Phase 3: Complete Advance onto Captured Square & Smooth Unhurried Camera Ease-Back
+          // Phase 3: Pousa na casa vazia após a vítima e retorna suavemente a câmera
           phaseName = 'return';
           const uReturn = Math.min(1, (elapsed - tStrikeDone) / Math.max(0.1, totalDuration - tStrikeDone));
           const easeRet = easeInOutCubic(uReturn);
@@ -2741,60 +3729,85 @@ export function initWizardChess() {
     const activeMoveTweens = [];
 
     // =========================================================================
-    // Single-Player Tactical AI (Auto-Plays Opponent Turn + Manual AI Button)
+    // Inteligência Artificial Tática para Damas Brasileiras
     // =========================================================================
     function chooseSmartAIMove(color) {
-      const legalMoves = getAllLegalMoves(color);
-      if (legalMoves.length === 0) return null;
+      const allMoves = getAllLegalMoves(color);
+      if (allMoves.length === 0) return null;
+
+      // A IA sempre prioriza comer quando há captura disponível para não ter sua pedra assoprada!
+      const captureOnlyMoves = allMoves.filter((m) => m.capture);
+      let legalMoves = allMoves;
+      if (captureOnlyMoves.length > 0) {
+        let maxChain = 0;
+        for (const cm of captureOnlyMoves) {
+          if ((cm.maxChainCount || 1) > maxChain) maxChain = cm.maxChainCount || 1;
+        }
+        legalMoves = captureOnlyMoves.filter((cm) => (cm.maxChainCount || 1) === maxChain);
+      }
 
       let bestScore = -Infinity;
       let bestCandidates = [];
+      const oppColor = color === 'w' ? 'b' : 'w';
+      const promoRow = color === 'w' ? 0 : 7;
+      const homeRow = color === 'w' ? 7 : 0;
 
       for (const m of legalMoves) {
         const piece = boardState[m.fromR][m.fromC];
-        const target = boardState[m.toR][m.toC];
+        if (!piece) continue;
         let score = 0;
 
-        // Material gain on capture
-        if (target) {
-          score += PIECE_VALUES[target.type] * 1.15 - PIECE_VALUES[piece.type] * 0.08;
+        // 1. Recompensa por capturas e tamanho da cadeia
+        if (m.capture) {
+          const capturedPiece = m.capturedR >= 0 ? boardState[m.capturedR]?.[m.capturedC] : null;
+          const capVal = capturedPiece ? PIECE_VALUES[capturedPiece.type] : 100;
+          score += capVal * 1.4 + (m.maxChainCount || 1) * 120;
         }
 
-        // Center control bonus
-        const centerDist = Math.abs(3.5 - m.toR) + Math.abs(3.5 - m.toC);
-        score += (7 - centerDist) * 8;
+        // 2. Bônus por coroação em Dama
+        if (piece.type === 'pawn' && m.toR === promoRow && (!m.capture || (m.maxChainCount || 1) === 1)) {
+          score += 240;
+        }
 
-        // Pawn advancement bonus
+        // 3. Avanço estratégico de pedras operárias e proteção da primeira fileira (atrasar saída da base)
         if (piece.type === 'pawn') {
-          const advance = color === 'w' ? (6 - m.toR) : (m.toR - 1);
-          score += advance * 12;
-        }
-
-        // Simulate move to check if destination is hanging or gives check
-        boardState[m.toR][m.toC] = piece;
-        boardState[m.fromR][m.fromC] = null;
-        const oppColor = color === 'w' ? 'b' : 'w';
-        if (isKingInCheck(oppColor, boardState)) {
-          score += 45;
-        }
-        // Check if opponent can recapture on destination square
-        for (let rr = 0; rr < 8; rr++) {
-          for (let cc = 0; cc < 8; cc++) {
-            const opp = boardState[rr][cc];
-            if (opp && opp.color === oppColor) {
-              const oppMoves = getPseudoMovesForPiece(rr, cc, boardState);
-              if (oppMoves.some((om) => om.r === m.toR && om.c === m.toC)) {
-                score -= PIECE_VALUES[piece.type] * 0.75;
-                break;
-              }
-            }
+          const advance = color === 'w' ? (7 - m.toR) : m.toR;
+          score += advance * 14;
+          if (m.fromR === homeRow && !m.capture) {
+            score -= 18; // Preservar a fileira de fundo fechada contra damas inimigas
           }
         }
-        boardState[m.fromR][m.fromC] = piece;
-        boardState[m.toR][m.toC] = target;
 
-        // Small jitter so AI varies openings
-        score += (Math.random() - 0.5) * 14;
+        // 4. Controle das casas centrais e segurança nas bordas laterais (colunas 0 e 7 não podem ser comidas no próximo lance)
+        if (m.toC === 0 || m.toC === 7) {
+          score += 16;
+        } else {
+          const centerDist = Math.abs(3.5 - m.toR) + Math.abs(3.5 - m.toC);
+          score += (7 - centerDist) * 6;
+        }
+
+        // 5. Simulação de 1 passo: verificar se o lance entrega captura gratuita ao adversário
+        const savedFrom = boardState[m.fromR][m.fromC];
+        const savedCap = m.capture && m.capturedR >= 0 ? boardState[m.capturedR][m.capturedC] : null;
+        boardState[m.fromR][m.fromC] = null;
+        if (m.capture && m.capturedR >= 0) {
+          boardState[m.capturedR][m.capturedC] = null;
+        }
+        boardState[m.toR][m.toC] = piece;
+
+        const oppMaxCap = getGlobalMaxCapturesForColor(oppColor, boardState);
+        if (oppMaxCap > 0) {
+          score -= oppMaxCap * 135;
+        }
+
+        boardState[m.toR][m.toC] = null;
+        if (m.capture && m.capturedR >= 0) {
+          boardState[m.capturedR][m.capturedC] = savedCap;
+        }
+        boardState[m.fromR][m.fromC] = savedFrom;
+
+        // Pequena variação para partidas variadas
+        score += (Math.random() - 0.5) * 12;
 
         if (score > bestScore + 1) {
           bestScore = score;
@@ -2825,6 +3838,7 @@ export function initWizardChess() {
 
       const aiColor = playerColor === 'w' ? 'b' : 'w';
       if (currentTurn === aiColor) {
+        const delayMs = activeChainSquare ? 420 : 540;
         aiTimer = setTimeout(() => {
           aiTimer = null;
           if (
@@ -2836,21 +3850,19 @@ export function initWizardChess() {
           ) {
             triggerAIMoveNow();
           }
-        }, 540);
+        }, delayMs);
       }
     }
 
-    // =========================================================================
-    // Feature 3 (3a, 3b, 3c): Chess Notation Parser & Step-Through Choreography
-    // =========================================================================
     function createInitialVirtualBoard() {
       const b = Array.from({ length: 8 }, () => Array(8).fill(null));
-      const backRow = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
-      for (let c = 0; c < 8; c++) {
-        b[7][c] = { type: backRow[c], color: 'w', hasMoved: false };
-        b[6][c] = { type: 'pawn', color: 'w', hasMoved: false };
-        b[1][c] = { type: 'pawn', color: 'b', hasMoved: false };
-        b[0][c] = { type: backRow[c], color: 'b', hasMoved: false };
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if ((r + c) % 2 === 1) {
+            if (r <= 2) b[r][c] = { type: 'pawn', color: 'b', hasMoved: false };
+            else if (r >= 5) b[r][c] = { type: 'pawn', color: 'w', hasMoved: false };
+          }
+        }
       }
       return b;
     }
@@ -3243,7 +4255,7 @@ export function initWizardChess() {
       document.body.classList.toggle('cinematic-ui-hidden', shouldHide);
       const btnHide = document.getElementById('btn-hide-ui');
       if (btnHide) {
-        btnHide.textContent = shouldHide ? 'Show UI [H]' : 'Hide UI [H]';
+        btnHide.textContent = shouldHide ? 'Mostrar UI [H]' : 'Ocultar UI [H]';
       }
       return shouldHide;
     }
@@ -3342,6 +4354,9 @@ export function initWizardChess() {
       if (e.code === 'KeyH' || e.code === 'KeyU') {
         e.preventDefault();
         toggleUI();
+      } else if (e.code === 'KeyM') {
+        e.preventDefault();
+        toggleSound();
       }
     });
 
@@ -3356,7 +4371,7 @@ export function initWizardChess() {
     });
 
     // =========================================================================
-    // Feature 7: Checkmate Rigged King Fall-Over Animation & Cathedral Overlay
+    // Sequência de Fim de Jogo e Banner de Vitória nas Damas Brasileiras
     // =========================================================================
     function spawnKingFallImpact(worldPos, color) {
       const mat = color === 'w' ? whitePieceMat : blackPieceMat;
@@ -3396,16 +4411,19 @@ export function initWizardChess() {
       const titleEl = document.getElementById('checkmate-title');
       const subEl = document.getElementById('checkmate-subtitle');
 
-      const winnerName = winnerColor === 'w' ? 'White' : 'Black';
-      const defeatedName = defeatedColor === 'w' ? 'White' : 'Black';
+      const winnerName = winnerColor === 'w' ? 'Brancas' : 'Pretas';
+      const defeatedName = defeatedColor === 'w' ? 'Brancas' : 'Pretas';
 
-      if (crownEl) crownEl.textContent = winnerColor === 'w' ? '♔' : '♚';
-      if (titleEl) titleEl.textContent = 'Checkmate';
+      if (crownEl) crownEl.textContent = winnerColor === 'w' ? '♕' : '♛';
+      if (titleEl) titleEl.textContent = 'Vitória nas Damas!';
       if (subEl) {
-        subEl.textContent = `${winnerName} Triumphs • The ${defeatedName} King Has Fallen`;
+        subEl.textContent = `As ${winnerName} Vencem • Pedras ${defeatedName} Sem Movimentos`;
       }
       if (overlay) {
         overlay.classList.add('visible');
+      }
+      if (!checkmateState.bannerVisible) {
+        playVictorySound();
       }
       checkmateState.bannerVisible = true;
     }
@@ -3413,20 +4431,21 @@ export function initWizardChess() {
     function triggerCheckmateSequence(defeatedColor = currentTurn, winnerColor = null) {
       const actualWinner = winnerColor || (defeatedColor === 'w' ? 'b' : 'w');
 
-      // Find the defeated King on the board
-      let kingPiece = null;
-      let kingR = -1;
-      let kingC = -1;
+      // Find any remaining defeated piece on the board (if blocked), otherwise celebrate immediately
+      let targetPiece = null;
+      let targetR = -1;
+      let targetC = -1;
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
           const p = boardState[r][c];
-          if (p && p.type === 'king' && p.color === defeatedColor) {
-            kingPiece = p;
-            kingR = r;
-            kingC = c;
+          if (p && p.color === defeatedColor) {
+            targetPiece = p;
+            targetR = r;
+            targetC = c;
             break;
           }
         }
+        if (targetPiece) break;
       }
 
       checkmateState.active = true;
@@ -3435,149 +4454,44 @@ export function initWizardChess() {
       checkmateState.kingFallAngleDeg = 0;
       checkmateState.phase = 'stagger';
 
-      if (!kingPiece || !kingPiece.mesh) {
+      if (!targetPiece || !targetPiece.mesh) {
+        checkmateState.phase = 'fallen';
         showCheckmateBanner(actualWinner, defeatedColor);
-        return false;
+        return true;
       }
 
-      // Find the checkmating attacker piece so the King falls away from the blow or into the clearest open square
-      let attackerPos = null;
-      if (moveHistory.length > 0) {
-        const lastMv = moveHistory[moveHistory.length - 1].move;
-        if (lastMv) {
-          attackerPos = boardToWorld(lastMv.toR, lastMv.toC);
-        }
-      }
-      if (!attackerPos) {
-        for (let r = 0; r < 8; r++) {
-          for (let c = 0; c < 8; c++) {
-            const p = boardState[r][c];
-            if (p && p.color === actualWinner) {
-              const moves = getPseudoMovesForPiece(r, c, boardState);
-              if (moves.some((m) => m.r === kingR && m.c === kingC)) {
-                attackerPos = boardToWorld(r, c);
-                break;
-              }
-            }
-          }
-        }
-      }
-
-      const homePos = boardToWorld(kingR, kingC);
+      const homePos = boardToWorld(targetR, targetC);
       const forwardDirZ = defeatedColor === 'b' ? 1 : -1;
+      const fallDirX = 0.24;
+      const fallDirZ = forwardDirZ * 0.97;
 
-      // Evaluate 16 candidate fall directions around the King to pick the clearest open path on the board
-      let bestDirX = 0.24;
-      let bestDirZ = forwardDirZ * 0.97;
-      let bestScore = -Infinity;
-
-      const awayFromAttacker = attackerPos
-        ? new THREE.Vector2(homePos.x - attackerPos.x, homePos.z - attackerPos.z).normalize()
-        : new THREE.Vector2(0.25, forwardDirZ).normalize();
-
-      for (let i = 0; i < 16; i++) {
-        const ang = (i / 16) * Math.PI * 2;
-        const dx = Math.cos(ang);
-        const dz = Math.sin(ang);
-
-        // Check where the King's crown (0.50m from base) lands in board coordinates
-        const tipWorldX = homePos.x + dx * 0.44;
-        const tipWorldZ = homePos.z + dz * 0.44;
-        const tipC = Math.round(tipWorldX / BOARD_SQ_SIZE + 3.5);
-        const tipR = Math.round(tipWorldZ / BOARD_SQ_SIZE + 3.5);
-
-        let score = 0;
-        // Prefer staying inside the 8x8 board surface
-        if (tipR >= 0 && tipR < 8 && tipC >= 0 && tipC < 8) {
-          score += 40;
-          const occ = boardState[tipR]?.[tipC];
-          if (!occ) {
-            score += 65; // Open square for the fallen King's body & crown!
-          } else if (occ !== kingPiece) {
-            score -= 50;
-          }
-        } else {
-          score -= 35;
-        }
-
-        // Prefer falling away from the attacker's blow or forward-diagonally toward the center
-        score += (dx * awayFromAttacker.x + dz * awayFromAttacker.y) * 18;
-        score += dz * forwardDirZ * 14;
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestDirX = dx;
-          bestDirZ = dz;
-        }
+      if (targetPiece.currentAction) {
+        targetPiece.currentAction.paused = true;
       }
 
-      const fallLen = Math.hypot(bestDirX, bestDirZ) || 1;
-      const fallDirX = bestDirX / fallLen;
-      const fallDirZ = bestDirZ / fallLen;
-
-      // Highlight the defeated King's square with a crimson-and-gold Checkmate ring
-      clearSquareHighlights();
-      const outerRingGeo = new THREE.RingGeometry(0.135, 0.175, 36);
-      outerRingGeo.rotateX(-Math.PI / 2);
-      const outerRingMat = new THREE.MeshBasicMaterial({ color: 0xe63946, side: THREE.DoubleSide });
-      const outerRing = new THREE.Mesh(outerRingGeo, outerRingMat);
-      outerRing.position.set(homePos.x, BOARD_SURFACE_Y + 0.012, homePos.z);
-      squareHighlightsGroup.add(outerRing);
-
-      const innerRingGeo = new THREE.RingGeometry(0.10, 0.125, 36);
-      innerRingGeo.rotateX(-Math.PI / 2);
-      const innerRingMat = new THREE.MeshBasicMaterial({ color: 0xf5d76e, side: THREE.DoubleSide });
-      const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
-      innerRing.position.set(homePos.x, BOARD_SURFACE_Y + 0.014, homePos.z);
-      squareHighlightsGroup.add(innerRing);
-
-      // Pause the King's idle mixer so its stone statue mesh pivots cleanly as a rigid monument
-      if (kingPiece.currentAction) {
-        kingPiece.currentAction.paused = true;
-      }
-
-      // Face the King toward the checkmating attacker (or forward) before toppling
-      const baseYaw = attackerPos
-        ? Math.atan2(attackerPos.x - homePos.x, attackerPos.z - homePos.z)
-        : (defeatedColor === 'w' ? Math.PI : 0);
+      const baseYaw = defeatedColor === 'w' ? Math.PI : 0;
       const qBaseFacing = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), baseYaw);
-      // Right-handed horizontal axis perpendicular to fallDir so +angle pitches the King's crown toward (fallDirX, 0, fallDirZ)
       const tiltAxis = new THREE.Vector3(fallDirZ, 0, -fallDirX).normalize();
       const qTilt = new THREE.Quaternion();
 
-      // Smoothly frame the checkmate on the board if the user isn't manually flying the camera with WASD
-      if (heldCameraKeys.size === 0) {
-        const camSideX = homePos.x >= 0 ? -1.35 : 1.35;
-        const camSideZ = homePos.z + forwardDirZ * 1.45;
-        smoothCameraTo(
-          new THREE.Vector3(homePos.x + camSideX, BOARD_SURFACE_Y + 1.15, camSideZ),
-          new THREE.Vector3(
-            homePos.x + fallDirX * 0.22,
-            BOARD_SURFACE_Y + 0.18,
-            homePos.z + fallDirZ * 0.22
-          ),
-          0.95
-        );
-      }
-
-      const RIM_RADIUS = 0.135;    // Pedestal bottom rim radius so the lower edge stays grounded on the board
-      const MAX_FALL_RAD = 1.50;   // 86 degrees: King lies fallen on its side across the board tiles
-      const tStagger = 0.36;
-      const tImpact = 1.12;
-      const tTotal = 1.82;
+      const RIM_RADIUS = 0.135;
+      const MAX_FALL_RAD = 1.50;
+      const tStagger = 0.32;
+      const tImpact = 0.96;
+      const tTotal = 1.45;
 
       let elapsed = 0;
       let impactTriggered = false;
       let bannerShown = false;
 
-      function applyKingTopplePose(thetaRad, shudderRoll = 0) {
+      function applyTopplePose(thetaRad, shudderRoll = 0) {
         const clampedTheta = Math.max(-0.15, Math.min(1.55, thetaRad));
         checkmateState.kingFallAngleDeg = Number(((clampedTheta * 180) / Math.PI).toFixed(1));
 
         const px = homePos.x + fallDirX * RIM_RADIUS * (1 - Math.cos(clampedTheta));
         const py = BOARD_SURFACE_Y + RIM_RADIUS * Math.sin(Math.max(0, clampedTheta));
         const pz = homePos.z + fallDirZ * RIM_RADIUS * (1 - Math.cos(clampedTheta));
-        kingPiece.mesh.position.set(px, py, pz);
+        targetPiece.mesh.position.set(px, py, pz);
 
         qTilt.setFromAxisAngle(tiltAxis, clampedTheta);
         if (Math.abs(shudderRoll) > 1e-4) {
@@ -3587,60 +4501,50 @@ export function initWizardChess() {
           );
           qTilt.multiply(qShudder);
         }
-        kingPiece.mesh.quaternion.copy(qTilt).multiply(qBaseFacing);
+        targetPiece.mesh.quaternion.copy(qTilt).multiply(qBaseFacing);
       }
 
-      function stepKingFall(dt) {
-        if (!checkmateState.active || !kingPiece.mesh) return true;
+      function stepFall(dt) {
+        if (!checkmateState.active || !targetPiece.mesh) return true;
         elapsed += dt;
 
-        if (!bannerShown && elapsed >= 0.48) {
+        if (!bannerShown && elapsed >= 0.35) {
           bannerShown = true;
           showCheckmateBanner(actualWinner, defeatedColor);
         }
 
         if (elapsed <= tStagger) {
-          // Phase 1: Royal Stagger & Tremor as the checkmate blow echoes through the King statue
           checkmateState.phase = 'stagger';
           const u = elapsed / tStagger;
           const shudder = Math.sin(u * Math.PI * 6) * 0.065 * (1 - u * 0.3);
           const initialLean = u * u * 0.12;
-          applyKingTopplePose(initialLean, shudder);
+          applyTopplePose(initialLean, shudder);
         } else if (elapsed <= tImpact) {
-          // Phase 2: Accelerating Gravity Topple around the stone pedestal rim (0.12 rad -> 1.50 rad = 86 deg)
           checkmateState.phase = 'topple';
           const u = Math.min(1, (elapsed - tStagger) / (tImpact - tStagger));
           const gravCurve = Math.pow(u, 2.25);
           const theta = 0.12 + (MAX_FALL_RAD - 0.12) * gravCurve;
-          applyKingTopplePose(theta, 0);
+          applyTopplePose(theta, 0);
         } else {
-          // Phase 3: Heavy Stone Impact, Crown Shard Burst & Damped Restitution Bounce
           checkmateState.phase = 'impact';
           if (!impactTriggered) {
             impactTriggered = true;
-            const crownImpactPos = new THREE.Vector3(
-              homePos.x + fallDirX * 0.45,
+            const impactPos = new THREE.Vector3(
+              homePos.x + fallDirX * 0.35,
               BOARD_SURFACE_Y,
-              homePos.z + fallDirZ * 0.45
+              homePos.z + fallDirZ * 0.35
             );
-            spawnKingFallImpact(crownImpactPos, defeatedColor);
+            spawnKingFallImpact(impactPos, defeatedColor);
           }
 
           const uBounce = Math.min(1, (elapsed - tImpact) / (tTotal - tImpact));
-          const bounceAmp = 0.13 * Math.pow(1 - uBounce, 1.85);
+          const bounceAmp = 0.12 * Math.pow(1 - uBounce, 1.85);
           const theta = MAX_FALL_RAD - Math.abs(Math.sin(uBounce * Math.PI * 2.0)) * bounceAmp;
-          applyKingTopplePose(theta, 0);
-
-          // Subtle damped camera tremor when the heavy stone King crashes onto the altar board
-          if (elapsed <= tImpact + 0.28) {
-            const sProg = (elapsed - tImpact) / 0.28;
-            const decay = (1 - sProg) * (1 - sProg);
-            camera.position.y += Math.cos(sProg * Math.PI * 8) * 0.022 * decay;
-          }
+          applyTopplePose(theta, 0);
         }
 
         if (elapsed >= tTotal) {
-          applyKingTopplePose(MAX_FALL_RAD, 0);
+          applyTopplePose(MAX_FALL_RAD, 0);
           checkmateState.phase = 'fallen';
           if (!bannerShown) {
             showCheckmateBanner(actualWinner, defeatedColor);
@@ -3650,75 +4554,270 @@ export function initWizardChess() {
         return false;
       }
 
-      activeMoveTweens.push(stepKingFall);
+      activeMoveTweens.push(stepFall);
       return true;
     }
 
     // =========================================================================
-    // UI & Turn Status Updates
+    // Destaque Visual das Pedras com Captura Disponível (Sujeitas a Assopro se Ignoradas)
+    // =========================================================================
+    function showMandatoryCaptureHints(legalMoves) {
+      if (!legalMoves || legalMoves.length === 0) return;
+      const captureMoves = legalMoves.filter((m) => m.capture);
+      if (captureMoves.length === 0) return;
+      const originKeySet = new Set();
+      for (const m of captureMoves) {
+        const key = `${m.fromR},${m.fromC}`;
+        if (originKeySet.has(key)) continue;
+        originKeySet.add(key);
+
+        const pos = boardToWorld(m.fromR, m.fromC);
+        const pulseRingGeo = new THREE.RingGeometry(0.145, 0.175, 32);
+        pulseRingGeo.rotateX(-Math.PI / 2);
+        const pulseRingMat = new THREE.MeshBasicMaterial({
+          color: 0xf5d76e,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85
+        });
+        const pulseRing = new THREE.Mesh(pulseRingGeo, pulseRingMat);
+        pulseRing.position.set(pos.x, BOARD_SURFACE_Y + 0.011, pos.z);
+        squareHighlightsGroup.add(pulseRing);
+      }
+    }
+
+    // =========================================================================
+    // UI & Turn Status Updates (Damas Brasileiras 8x8 com Regra do Assopro)
     // =========================================================================
     function updateTurnUI() {
       const turnDot = document.getElementById('turn-dot');
       const turnText = document.getElementById('turn-text');
       const modeBadge = document.getElementById('mode-badge');
+      const btnModeToggle = document.getElementById('btn-mode-toggle');
       const btnAiMove = document.getElementById('btn-ai-move');
       const btnSideToggle = document.getElementById('btn-side-toggle');
       const roomPill = document.getElementById('room-pill');
       const capturedTray = document.getElementById('captured-tray');
 
-      turnDot.className = 'turn-dot' + (currentTurn === 'b' ? ' black' : '');
+      if (turnDot) {
+        turnDot.className = 'turn-dot' + (currentTurn === 'b' ? ' black' : '');
+      }
 
       const legalMoves = getAllLegalMoves(currentTurn);
-      const inCheck = isKingInCheck(currentTurn, boardState);
+      const captureMoves = legalMoves.filter((m) => m.capture);
+      const hasCaptureAvailable = captureMoves.length > 0;
 
       if (legalMoves.length === 0) {
         gameOver = true;
-        if (inCheck) {
-          const winner = currentTurn === 'w' ? 'Black' : 'White';
-          turnText.textContent = `Checkmate — ${winner} Wins`;
-          if (!checkmateState.active) {
-            triggerCheckmateSequence(currentTurn, currentTurn === 'w' ? 'b' : 'w');
-          }
-        } else {
-          turnText.textContent = 'Stalemate — Draw';
+        const winnerColor = currentTurn === 'w' ? 'b' : 'w';
+        const winnerName = winnerColor === 'w' ? 'Brancas' : 'Pretas';
+        if (turnText) {
+          turnText.textContent = `Fim de Jogo — Vitória das ${winnerName}!`;
+        }
+        if (!checkmateState.active) {
+          triggerCheckmateSequence(currentTurn, winnerColor);
         }
       } else {
-        const turnLabel = currentTurn === 'w' ? 'White to Move' : 'Black to Move';
+        const turnLabel = currentTurn === 'w' ? 'Vez das Brancas' : 'Vez das Pretas';
         const aiColor = playerColor === 'w' ? 'b' : 'w';
         const isAiTurn = !scriptedGameActive && gameMode === 'single' && currentTurn === aiColor;
-        if (inCheck) {
-          turnText.textContent = `${turnLabel} (Check!)`;
+
+        if (activeChainSquare) {
+          if (turnText) {
+            turnText.textContent = `${turnLabel} (Continue a Captura!)`;
+          }
+        } else if (lastAssoproNotice) {
+          if (turnText) {
+            turnText.textContent = `${lastAssoproNotice} • ${turnLabel}`;
+          }
         } else if (isAiTurn) {
-          turnText.textContent = `${turnLabel} (AI)...`;
-        } else {
+          if (turnText) {
+            turnText.textContent = `${turnLabel} (IA pensando...)`;
+          }
+        } else if (hasCaptureAvailable) {
+          if (turnText) {
+            turnText.textContent = `${turnLabel} • Captura Disponível (Não comer = Assoprada!)`;
+          }
+        } else if (turnText) {
           turnText.textContent = turnLabel;
+        }
+
+        // Se for a vez do jogador humano e nenhuma peça estiver selecionada ainda, destaca pedras que podem comer
+        if (!isAiTurn && !selectedSquare && hasCaptureAvailable && !isAnimatingMove) {
+          clearSquareHighlights();
+          showMandatoryCaptureHints(legalMoves);
         }
       }
 
       if (modeBadge) {
-        modeBadge.textContent = `Playing as ${playerColor === 'w' ? 'White' : 'Black'}`;
+        if (gameMode === 'local2p') {
+          modeBadge.textContent = '2 Jogadores Local';
+        } else {
+          modeBadge.textContent = `Contra IA (${playerColor === 'w' ? 'Brancas' : 'Pretas'})`;
+        }
       }
+
+      if (btnModeToggle) {
+        btnModeToggle.textContent = gameMode === 'local2p' ? 'Modo: 2 Jogadores' : 'Modo: Contra IA';
+      }
+
       if (btnAiMove) {
         btnAiMove.style.display = 'inline-flex';
       }
+
       if (btnSideToggle) {
-        btnSideToggle.style.display = 'inline-flex';
-        btnSideToggle.textContent = playerColor === 'w' ? 'Play as Black' : 'Play as White';
+        btnSideToggle.style.display = gameMode === 'single' ? 'inline-flex' : 'none';
+        btnSideToggle.textContent = playerColor === 'w' ? 'Jogar de Pretas' : 'Jogar de Brancas';
       }
+
       if (roomPill) {
         roomPill.style.display = 'none';
       }
 
-      if (capturedByWhite > 0 || capturedByBlack > 0) {
-        capturedTray.textContent = `Captured — White: ${capturedByWhite} | Black: ${capturedByBlack}`;
-      } else {
-        capturedTray.textContent = '';
+      if (capturedTray) {
+        // Count Damas on board for extra clarity
+        let whiteDamas = 0;
+        let blackDamas = 0;
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const p = boardState[r][c];
+            if (p && p.type === 'queen') {
+              if (p.color === 'w') whiteDamas++;
+              else blackDamas++;
+            }
+          }
+        }
+        const damaInfo =
+          whiteDamas > 0 || blackDamas > 0
+            ? `   •   Damas ♕ — Brancas: ${whiteDamas} | Pretas: ${blackDamas}`
+            : '';
+        capturedTray.textContent = `Capturadas — Brancas: ${capturedByWhite}/12  |  Pretas: ${capturedByBlack}/12${damaInfo}`;
       }
+
+      updateHistorySidebarUI();
       if (typeof updateScriptBarUI === 'function') updateScriptBarUI();
     }
 
+    function updateHistorySidebarUI() {
+      const whiteCountEl = document.getElementById('hist-cap-white-count');
+      const blackCountEl = document.getElementById('hist-cap-black-count');
+      const whiteStonesEl = document.getElementById('hist-cap-white-stones');
+      const blackStonesEl = document.getElementById('hist-cap-black-stones');
+      const assopradasBadgeEl = document.getElementById('assopradas-count-badge');
+      const assopradasListEl = document.getElementById('assopradas-list');
+      const movesBadgeEl = document.getElementById('moves-count-badge');
+      const movesListEl = document.getElementById('moves-history-list');
+
+      // Contabilizar quantas pedras de cada cor foram assopradas
+      const blackBlownCount = assopradasHistory.filter((a) => a.color === 'b').length;
+      const whiteBlownCount = assopradasHistory.filter((a) => a.color === 'w').length;
+
+      if (whiteCountEl) {
+        whiteCountEl.innerHTML = `${capturedByWhite} <small>/ 12</small>`;
+      }
+      if (blackCountEl) {
+        blackCountEl.innerHTML = `${capturedByBlack} <small>/ 12</small>`;
+      }
+
+      if (whiteStonesEl) {
+        let pipsHtml = '';
+        for (let i = 0; i < Math.min(12, capturedByWhite); i++) {
+          const isAssoprada = i >= capturedByWhite - blackBlownCount;
+          pipsHtml += `<span class="mini-stone-pip captured-b${isAssoprada ? ' assoprada-pip' : ''}" title="${isAssoprada ? 'Pedra Preta Assoprada' : 'Pedra Preta Capturada'}"></span>`;
+        }
+        whiteStonesEl.innerHTML = pipsHtml;
+      }
+
+      if (blackStonesEl) {
+        let pipsHtml = '';
+        for (let i = 0; i < Math.min(12, capturedByBlack); i++) {
+          const isAssoprada = i >= capturedByBlack - whiteBlownCount;
+          pipsHtml += `<span class="mini-stone-pip captured-w${isAssoprada ? ' assoprada-pip' : ''}" title="${isAssoprada ? 'Pedra Branca Assoprada' : 'Pedra Branca Capturada'}"></span>`;
+        }
+        blackStonesEl.innerHTML = pipsHtml;
+      }
+
+      if (assopradasBadgeEl) {
+        assopradasBadgeEl.textContent = String(assopradasHistory.length);
+      }
+
+      if (assopradasListEl) {
+        if (assopradasHistory.length === 0) {
+          assopradasListEl.innerHTML =
+            '<div class="history-empty-msg">Nenhuma pedra assoprada ainda. Deixar de comer elimina a pedra!</div>';
+        } else {
+          assopradasListEl.innerHTML = assopradasHistory
+            .slice()
+            .reverse()
+            .map(
+              (item) => `
+              <div class="assoprada-item">
+                <div class="assoprada-item-left">
+                  <span class="capture-dot ${item.color === 'w' ? 'white' : 'black'}"></span>
+                  <span class="assoprada-wind-tag">💨 Assoprada</span>
+                  <span class="assoprada-desc">${item.pieceLabel}</span>
+                </div>
+                <span class="assoprada-sq" title="Lance #${item.moveNumber} na casa ${item.square}">#${item.moveNumber} • ${item.square}</span>
+              </div>`
+            )
+            .join('');
+        }
+      }
+
+      if (movesBadgeEl) {
+        movesBadgeEl.textContent = String(moveHistory.length);
+      }
+
+      if (movesListEl) {
+        if (moveHistory.length === 0) {
+          movesListEl.innerHTML =
+            '<div class="history-empty-msg">Clique em uma pedra para iniciar a partida.</div>';
+        } else {
+          movesListEl.innerHTML = moveHistory
+            .slice()
+            .reverse()
+            .map((entry, revIdx) => {
+              const mv = entry.move || {};
+              const moveNum = mv.moveNumber || moveHistory.length - revIdx;
+              const fromSq = mv.fromSq || coordToSquareName(mv.fromR ?? 0, mv.fromC ?? 0);
+              const toSq = mv.toSq || coordToSquareName(mv.toR ?? 0, mv.toC ?? 0);
+              const sep = mv.capture ? '×' : '→';
+              const rowCls = [
+                'move-log-row',
+                mv.capture ? 'is-capture' : '',
+                mv.assoprada ? 'is-assoprada' : ''
+              ]
+                .filter(Boolean)
+                .join(' ');
+
+              let tagsHtml = '';
+              if (mv.capture) {
+                tagsHtml += `<span class="move-tag capture" title="Comeu pedra em ${mv.capturedSq || ''}">× ${mv.capturedSq || 'Comida'}</span>`;
+              }
+              if (mv.crowned) {
+                tagsHtml += `<span class="move-tag dama">♕ Dama</span>`;
+              }
+              if (mv.assoprada) {
+                tagsHtml += `<span class="move-tag assoprada" title="${mv.assoprada.pieceLabel} assoprada em ${mv.assoprada.square}">💨 ${mv.assoprada.square}</span>`;
+              }
+
+              return `
+              <div class="${rowCls}">
+                <div class="move-log-left">
+                  <span class="move-log-num">#${moveNum}</span>
+                  <span class="capture-dot ${mv.color === 'w' ? 'white' : 'black'}"></span>
+                  <span class="move-log-coord">${fromSq} ${sep} ${toSq}</span>
+                </div>
+                <div class="move-log-tags">${tagsHtml}</div>
+              </div>`;
+            })
+            .join('');
+        }
+      }
+    }
+
     // =========================================================================
-    // Raycasting & Board Interaction
+    // Raycasting & Board Interaction (Damas Brasileiras)
     // =========================================================================
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -3733,7 +4832,7 @@ export function initWizardChess() {
       if (moveDist > 6) return;
       if (isAnimatingMove || gameOver) return;
 
-      // Enforce turn ownership in Multiplayer, and in Single Player only block while AI auto-move timer is actively pending
+      // Enforce turn ownership in Online Multiplayer, and in Single Player only block while AI auto-move timer is actively pending
       if (gameMode === 'multi' && currentTurn !== playerColor) return;
       if (!scriptedGameActive && gameMode === 'single' && currentTurn !== playerColor && aiTimer !== null) return;
 
@@ -3754,10 +4853,12 @@ export function initWizardChess() {
 
       const hits = raycaster.intersectObjects([...pieceMeshes, ...boardSquareMeshes], true);
       if (hits.length === 0) {
+        if (activeChainSquare) return; // Don't deselect during an active multi-capture chain
         if (preMoveHighlightTask) preMoveHighlightTask = null;
         clearSquareHighlights();
         selectedSquare = null;
         validMoves = [];
+        updateTurnUI();
         return;
       }
 
@@ -3780,21 +4881,30 @@ export function initWizardChess() {
 
       if (clickedR === -1) return;
 
-      // Cancel any pending scripted pre-move highlight timer when the user manually interacts with the board
       if (preMoveHighlightTask) {
         preMoveHighlightTask = null;
       }
 
+      // If in the middle of a multi-capture chain, keep activeChainSquare locked
+      if (activeChainSquare && (!selectedSquare || selectedSquare.r !== activeChainSquare.r || selectedSquare.c !== activeChainSquare.c)) {
+        selectedSquare = { r: activeChainSquare.r, c: activeChainSquare.c };
+        validMoves = getLegalMovesForPiece(activeChainSquare.r, activeChainSquare.c);
+      }
+
       if (selectedSquare) {
-        const move = validMoves.find(
-          (m) =>
-            (m.r === clickedR && m.c === clickedC) ||
-            (m.castle && m.r === clickedR && m.rookFromC === clickedC)
-        );
+        const move = validMoves.find((m) => m.r === clickedR && m.c === clickedC);
         if (move) {
           executeChessMove(selectedSquare.r, selectedSquare.c, move.r, move.c);
           return;
         }
+      }
+
+      // During a multi-capture chain, only the capturing piece can be selected
+      if (activeChainSquare) {
+        selectedSquare = { r: activeChainSquare.r, c: activeChainSquare.c };
+        validMoves = getLegalMovesForPiece(activeChainSquare.r, activeChainSquare.c);
+        showSquareHighlights(activeChainSquare.r, activeChainSquare.c, validMoves);
+        return;
       }
 
       const clickedPiece = boardState[clickedR][clickedC];
@@ -3802,10 +4912,12 @@ export function initWizardChess() {
         selectedSquare = { r: clickedR, c: clickedC };
         validMoves = getLegalMovesForPiece(clickedR, clickedC);
         showSquareHighlights(clickedR, clickedC, validMoves);
+        playSelectSound(clickedPiece.type === 'queen');
       } else {
         clearSquareHighlights();
         selectedSquare = null;
         validMoves = [];
+        updateTurnUI();
       }
     });
 
@@ -3889,7 +5001,6 @@ export function initWizardChess() {
 
     async function sendMultiplayerMove(movePayload) {
       if (!roomCode) return;
-      // 1. Update static local/BroadcastChannel room store immediately
       const stRoom = getStaticRoom(roomCode);
       if (stRoom) {
         stRoom.moves = stRoom.moves || [];
@@ -3905,7 +5016,6 @@ export function initWizardChess() {
         stRoom.updatedAt = Date.now();
         saveAndBroadcastStaticRoom(stRoom);
       }
-      // 2. Also broadcast to cloud/local room API if reachable
       await mpApiRequest(`/api/rooms/${roomCode}/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3929,13 +5039,13 @@ export function initWizardChess() {
       const statusEl = document.getElementById('hud-room-status');
       const bothReady = room.whiteJoined && room.blackJoined;
       if (statusEl) {
-        statusEl.textContent = bothReady ? '2/2 Connected' : 'Waiting for Opponent';
+        statusEl.textContent = bothReady ? '2/2 Conectados' : 'Aguardando Oponente';
       }
       const mpMsg = document.getElementById('mp-status-msg');
       if (mpMsg && roomCode) {
         mpMsg.textContent = bothReady
-          ? `Both players connected to Room ${room.code}!`
-          : `Room ${room.code} ready — waiting for second player to join...`;
+          ? `Ambos os jogadores conectados na Sala ${room.code}!`
+          : `Sala ${room.code} pronta — aguardando o segundo jogador...`;
       }
 
       if (room.resetCount > appliedResetCount) {
@@ -4006,7 +5116,7 @@ export function initWizardChess() {
 
     async function createMultiplayerRoom(preferredColor) {
       const mpMsg = document.getElementById('mp-status-msg');
-      mpMsg.textContent = 'Creating room...';
+      if (mpMsg) mpMsg.textContent = 'Criando sala...';
       ensurePlayerToken();
 
       let data = await mpApiRequest('/api/rooms/create', {
@@ -4015,7 +5125,6 @@ export function initWizardChess() {
         body: JSON.stringify({ preferredColor, playerToken })
       });
 
-      // Pure static fallback if neither local nor remote server is reachable
       if (!data || !data.ok) {
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         let genCode = '';
@@ -4056,8 +5165,10 @@ export function initWizardChess() {
       appliedMoveSeq = 0;
       appliedResetCount = data.room.resetCount || 0;
 
-      document.getElementById('modal-room-code').textContent = roomCode;
-      document.getElementById('room-created-panel').style.display = 'block';
+      const modalCodeEl = document.getElementById('modal-room-code');
+      if (modalCodeEl) modalCodeEl.textContent = roomCode;
+      const createdPanelEl = document.getElementById('room-created-panel');
+      if (createdPanelEl) createdPanelEl.style.display = 'block';
 
       resetChessBoard(true);
       startMultiplayerSync(roomCode);
@@ -4069,10 +5180,10 @@ export function initWizardChess() {
       const code = String(codeInput || '').trim().toUpperCase();
       const mpMsg = document.getElementById('mp-status-msg');
       if (!code) {
-        mpMsg.textContent = 'Please enter a 4-character Room Code.';
+        if (mpMsg) mpMsg.textContent = 'Digite o código de 4 letras da sala.';
         return false;
       }
-      mpMsg.textContent = `Joining room ${code}...`;
+      if (mpMsg) mpMsg.textContent = `Entrando na sala ${code}...`;
       ensurePlayerToken();
 
       let data = await mpApiRequest('/api/rooms/join', {
@@ -4149,10 +5260,10 @@ export function initWizardChess() {
       }
     }
 
-    let playerCamSide = 'w';     // toggles 'w' (White) <-> 'b' (Black) on repeat click of Player Cam
-    let overheadCamSide = 'w';   // toggles 'w' (White) <-> 'b' (Black) on repeat click of Overhead
-    let sideCamSide = 'east';    // toggles 'east' (+X) <-> 'west' (-X) on repeat click of Side
-    let cathedralWideSide = 'north'; // toggles 'north' (Rose Window) <-> 'south' (Narthex Triptych) on repeat click of Cathedral
+    let playerCamSide = 'w';
+    let overheadCamSide = 'w';
+    let sideCamSide = 'east';
+    let cathedralWideSide = 'north';
 
     function setCameraPose(posArr, targetArr) {
       activeCamTransition = null;
@@ -4205,10 +5316,8 @@ export function initWizardChess() {
         }
         setActiveCamButton('btn-cam-wide');
         if (cathedralWideSide === 'south') {
-          // Black's wide Cathedral perspective looking South toward the Narthex Triptych (chessboard centered in frame)
           smoothCameraTo(new THREE.Vector3(0, 2.55, -6.65), new THREE.Vector3(0, 1.95, 2.50), 0.85);
         } else {
-          // White's wide Cathedral perspective looking North toward the Rose Window (chessboard centered in frame)
           smoothCameraTo(new THREE.Vector3(0, 2.55, 6.65), new THREE.Vector3(0, 1.95, -2.50), 0.85);
         }
       } else if (preset === 'white_backdrop') {
@@ -4228,20 +5337,37 @@ export function initWizardChess() {
     document.getElementById('btn-cam-top')?.addEventListener('click', () => setCameraPreset('top'));
     document.getElementById('btn-cam-side')?.addEventListener('click', () => setCameraPreset('side'));
     document.getElementById('btn-cam-wide')?.addEventListener('click', () => setCameraPreset('wide'));
+    document.getElementById('btn-sound-toggle')?.addEventListener('click', () => toggleSound());
     document.getElementById('btn-hide-ui')?.addEventListener('click', () => toggleUI());
 
     document.getElementById('btn-script-modal')?.addEventListener('click', () => openLobbyModal('script'));
     document.getElementById('btn-script-prev')?.addEventListener('click', () => stepScriptBackward());
     document.getElementById('btn-script-next')?.addEventListener('click', () => stepScriptForward());
 
+    document.getElementById('btn-mode-toggle')?.addEventListener('click', () => {
+      stopMultiplayerSync();
+      scriptedGameActive = false;
+      gameMode = gameMode === 'single' ? 'local2p' : 'single';
+      if (aiTimer) {
+        clearTimeout(aiTimer);
+        aiTimer = null;
+      }
+      updateTurnUI();
+      if (gameMode === 'single') {
+        maybeScheduleAIMove();
+      }
+    });
+
     document.getElementById('btn-ai-move')?.addEventListener('click', () => {
       triggerAIMoveNow();
     });
 
     document.getElementById('btn-side-toggle')?.addEventListener('click', () => {
-      if (gameMode !== 'single') return;
+      if (gameMode !== 'single') {
+        gameMode = 'single';
+      }
       playerColor = playerColor === 'w' ? 'b' : 'w';
-      resetChessBoard(true, scriptedGameActive);
+      resetChessBoard(true, false);
     });
 
     document.getElementById('btn-reset')?.addEventListener('click', async () => {
@@ -4283,12 +5409,15 @@ export function initWizardChess() {
       const isSingle = tab === 'single';
       const isMulti = tab === 'multi';
       const isScript = tab === 'script';
-      document.getElementById('tab-single').classList.toggle('active', isSingle);
-      document.getElementById('tab-multi').classList.toggle('active', isMulti);
-      document.getElementById('tab-script').classList.toggle('active', isScript);
-      document.getElementById('panel-single').style.display = isSingle ? 'block' : 'none';
-      document.getElementById('panel-multi').style.display = isMulti ? 'block' : 'none';
-      document.getElementById('panel-script').style.display = isScript ? 'block' : 'none';
+      document.getElementById('tab-single')?.classList.toggle('active', isSingle);
+      document.getElementById('tab-multi')?.classList.toggle('active', isMulti);
+      document.getElementById('tab-script')?.classList.toggle('active', isScript);
+      const pSingle = document.getElementById('panel-single');
+      const pMulti = document.getElementById('panel-multi');
+      const pScript = document.getElementById('panel-script');
+      if (pSingle) pSingle.style.display = isSingle ? 'block' : 'none';
+      if (pMulti) pMulti.style.display = isMulti ? 'block' : 'none';
+      if (pScript) pScript.style.display = isScript ? 'block' : 'none';
     }
 
     document.getElementById('btn-lobby')?.addEventListener('click', () => openLobbyModal());
@@ -4298,37 +5427,27 @@ export function initWizardChess() {
     document.getElementById('tab-script')?.addEventListener('click', () => switchLobbyTab('script'));
 
     document.getElementById('btn-preset-scandi')?.addEventListener('click', () => {
-      document.getElementById('input-notation').value = DEFAULT_DIRECTOR_NOTATION;
-    });
-    document.getElementById('btn-preset-italian')?.addEventListener('click', () => {
-      document.getElementById('input-notation').value =
-        '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d4 exd4 6. cxd4 Bb4+';
-    });
-    document.getElementById('btn-preset-scholar')?.addEventListener('click', () => {
-      document.getElementById('input-notation').value =
-        '1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7#';
+      const el = document.getElementById('input-notation');
+      if (el) el.value = DEFAULT_DIRECTOR_NOTATION;
     });
 
     document.getElementById('btn-load-notation')?.addEventListener('click', () => {
-      const val = document.getElementById('input-notation').value;
+      const val = document.getElementById('input-notation')?.value || '';
       const res = loadNotationScript(val, { orientCamera: false });
       if (res.ok) {
         closeLobbyModal();
-      } else {
-        document.getElementById('script-status-msg').textContent =
-          'Could not parse notation. Please enter valid PGN/SAN (e.g. 1. e4 e5 2. Nf3 Nc6) or UCI.';
       }
     });
 
     document.getElementById('pick-sp-white')?.addEventListener('click', () => {
       selectedSpColor = 'w';
-      document.getElementById('pick-sp-white').classList.add('selected');
-      document.getElementById('pick-sp-black').classList.remove('selected');
+      document.getElementById('pick-sp-white')?.classList.add('selected');
+      document.getElementById('pick-sp-black')?.classList.remove('selected');
     });
     document.getElementById('pick-sp-black')?.addEventListener('click', () => {
       selectedSpColor = 'b';
-      document.getElementById('pick-sp-black').classList.add('selected');
-      document.getElementById('pick-sp-white').classList.remove('selected');
+      document.getElementById('pick-sp-black')?.classList.add('selected');
+      document.getElementById('pick-sp-white')?.classList.remove('selected');
     });
 
     document.getElementById('btn-start-single')?.addEventListener('click', () => {
@@ -4344,13 +5463,13 @@ export function initWizardChess() {
 
     document.getElementById('pick-mp-white')?.addEventListener('click', () => {
       selectedMpColor = 'w';
-      document.getElementById('pick-mp-white').classList.add('selected');
-      document.getElementById('pick-mp-black').classList.remove('selected');
+      document.getElementById('pick-mp-white')?.classList.add('selected');
+      document.getElementById('pick-mp-black')?.classList.remove('selected');
     });
     document.getElementById('pick-mp-black')?.addEventListener('click', () => {
       selectedMpColor = 'b';
-      document.getElementById('pick-mp-black').classList.add('selected');
-      document.getElementById('pick-mp-white').classList.remove('selected');
+      document.getElementById('pick-mp-black')?.classList.add('selected');
+      document.getElementById('pick-mp-white')?.classList.remove('selected');
     });
 
     document.getElementById('btn-create-room')?.addEventListener('click', () => {
@@ -4364,14 +5483,16 @@ export function initWizardChess() {
     document.getElementById('btn-copy-code')?.addEventListener('click', () => {
       if (!roomCode) return;
       navigator.clipboard?.writeText(roomCode);
-      document.getElementById('mp-status-msg').textContent = `Copied room code ${roomCode}!`;
+      const el = document.getElementById('mp-status-msg');
+      if (el) el.textContent = `Código ${roomCode} copiado!`;
     });
 
     document.getElementById('btn-copy-link')?.addEventListener('click', () => {
       if (!roomCode) return;
       const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
       navigator.clipboard?.writeText(inviteUrl);
-      document.getElementById('mp-status-msg').textContent = 'Copied invite link to clipboard!';
+      const el = document.getElementById('mp-status-msg');
+      if (el) el.textContent = 'Link de convite copiado!';
     });
 
     document.getElementById('room-pill')?.addEventListener('click', () => {
@@ -4379,7 +5500,7 @@ export function initWizardChess() {
     });
 
     document.getElementById('btn-join-room')?.addEventListener('click', () => {
-      const val = document.getElementById('input-room-code').value;
+      const val = document.getElementById('input-room-code')?.value || '';
       joinMultiplayerRoom(val);
     });
 
@@ -4433,10 +5554,19 @@ export function initWizardChess() {
       openLobbyModal,
       closeLobbyModal,
       toggleUI,
+      toggleSound,
       loadNotation: (pgn, opts) => loadNotationScript(pgn, opts),
       stepScriptForward,
       stepScriptBackward,
       triggerCheckmateSequence,
+      setGameMode: (mode) => {
+        gameMode = mode === 'local2p' ? 'local2p' : 'single';
+        if (aiTimer) {
+          clearTimeout(aiTimer);
+          aiTimer = null;
+        }
+        updateTurnUI();
+      },
       testColumnCollisionSlide: (startArr, endArr, steps = 20) => {
         activeCamTransition = null;
         camera.position.set(startArr[0], startArr[1], startArr[2]);
@@ -4460,7 +5590,7 @@ export function initWizardChess() {
         scriptedGameActive = false;
         gameMode = 'single';
         playerColor = color === 'b' ? 'b' : 'w';
-        resetChessBoard(true);
+        resetChessBoard(true, false);
       },
       setupCustomScenario: (pieces, turn = 'w') => {
         stopMultiplayerSync();
@@ -4474,6 +5604,8 @@ export function initWizardChess() {
         scriptedGameActive = false;
         scriptDeviated = false;
         preMoveHighlightTask = null;
+        activeChainSquare = null;
+        chainCapturedSet.clear();
         clearCheckmateSequence();
         clearSquareHighlights();
         clearAllPieces();
@@ -4487,68 +5619,93 @@ export function initWizardChess() {
         renderer.render(scene, camera);
       },
       triggerDemoCapture: () => {
-        // Set up an immediate pawn capture (e4 x d5) and execute it
-        resetChessBoard(true);
-        // Move White e2->e4 and Black d7->d5 immediately on boardState, then animate White e4xd5
-        const wp = boardState[6][4];
-        boardState[6][4] = null;
-        boardState[4][4] = wp;
-        wp.r = 4; wp.c = 4;
-        wp.mesh.position.copy(boardToWorld(4, 4));
-
-        const bp = boardState[1][3];
-        boardState[1][3] = null;
-        boardState[3][3] = bp;
-        bp.r = 3; bp.c = 3;
-        bp.mesh.position.copy(boardToWorld(3, 3));
-
-        currentTurn = 'w';
-        return executeChessMove(4, 4, 3, 3);
+        // Demonstração de salto de captura nas Damas Brasileiras:
+        // Pedra branca em (4, 3) salta sobre pedra preta em (3, 4) pousando em (2, 5)
+        window.wizardChess.setupCustomScenario(
+          [
+            { type: 'pawn', color: 'w', r: 4, c: 3 },
+            { type: 'pawn', color: 'b', r: 3, c: 4 },
+            { type: 'pawn', color: 'b', r: 0, c: 1 }
+          ],
+          'w'
+        );
+        return executeChessMove(4, 3, 2, 5);
       },
-      getState: () => ({
-        gameMode,
-        scriptedGameActive,
-        scriptDeviated,
-        scriptMovesCount: scriptMoves.length,
-        scriptCursor,
-        moveHistoryCount: moveHistory.length,
-        preMoveHighlightActive: Boolean(preMoveHighlightTask),
-        selectedSquare,
-        validMovesCount: validMoves.length,
-        highlightMeshCount: squareHighlightsGroup.children.length,
-        uiHidden: document.body.classList.contains('cinematic-ui-hidden'),
-        playerColor,
-        currentTurn,
-        roomCode,
-        isAnimatingMove,
-        gameOver,
-        checkmateState: { ...checkmateState },
-        capturedByWhite,
-        capturedByBlack,
-        cameraPos: camera.position.toArray(),
-        cameraTarget: orbitControls.target.toArray(),
-        playerCamSide,
-        overheadCamSide,
-        sideCamSide,
-        cathedralWideSide,
-        cameraKeySpeedPct,
-        cameraRotSpeedPct,
-        wallStoneLookIndex: currentWallStoneLookIdx,
-        wallStoneLookName: WALL_STONE_LOOKS[currentWallStoneLookIdx]?.name || '',
-        floorStoneLookIndex: currentFloorStoneLookIdx,
-        floorStoneLookName: FLOOR_STONE_LOOKS[currentFloorStoneLookIdx]?.name || '',
-        floorMaterialRoughness: cathedralFloorMats[0]?.roughness ?? null,
-        floorMaterialMetalness: cathedralFloorMats[0]?.metalness ?? null,
-        keyMoveVelocity: keyMoveVelocity.toArray().map((v) => Number(v.toFixed(4))),
-        keyRotVelocity: {
-          yaw: Number(keyRotVelocity.yaw.toFixed(4)),
-          pitch: Number(keyRotVelocity.pitch.toFixed(4))
-        },
-        cathedralBounds: CATHEDRAL_BOUNDS,
-        solidColumnsCount: CATHEDRAL_SOLID_PILLARS.filter((p) => p.isColumn).length,
-        brazierPillars: CATHEDRAL_SOLID_PILLARS.filter((p) => !p.isColumn),
-        telemetry: cameraTelemetry
-      }),
+      getState: () => {
+        let whitePawns = 0;
+        let blackPawns = 0;
+        let whiteDamas = 0;
+        let blackDamas = 0;
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const p = boardState[r][c];
+            if (!p) continue;
+            if (p.color === 'w') {
+              if (p.type === 'queen') whiteDamas++;
+              else whitePawns++;
+            } else {
+              if (p.type === 'queen') blackDamas++;
+              else blackPawns++;
+            }
+          }
+        }
+        const currentLegals = getAllLegalMoves(currentTurn);
+        return {
+          gameMode,
+          scriptedGameActive,
+          scriptDeviated,
+          scriptMovesCount: scriptMoves.length,
+          scriptCursor,
+          moveHistoryCount: moveHistory.length,
+          preMoveHighlightActive: Boolean(preMoveHighlightTask),
+          selectedSquare,
+          activeChainSquare,
+          validMovesCount: validMoves.length,
+          legalMovesCount: currentLegals.length,
+          mandatoryCaptureActive: currentLegals.some((m) => m.capture),
+          assopradaCount,
+          lastAssoproNotice,
+          whitePawns,
+          blackPawns,
+          whiteDamas,
+          blackDamas,
+          soundEnabled,
+          activeParticleBurstsCount: magicParticleSystems.length,
+          highlightMeshCount: squareHighlightsGroup.children.length,
+          uiHidden: document.body.classList.contains('cinematic-ui-hidden'),
+          playerColor,
+          currentTurn,
+          roomCode,
+          isAnimatingMove,
+          gameOver,
+          checkmateState: { ...checkmateState },
+          capturedByWhite,
+          capturedByBlack,
+          cameraPos: camera.position.toArray(),
+          cameraTarget: orbitControls.target.toArray(),
+          playerCamSide,
+          overheadCamSide,
+          sideCamSide,
+          cathedralWideSide,
+          cameraKeySpeedPct,
+          cameraRotSpeedPct,
+          wallStoneLookIndex: currentWallStoneLookIdx,
+          wallStoneLookName: WALL_STONE_LOOKS[currentWallStoneLookIdx]?.name || '',
+          floorStoneLookIndex: currentFloorStoneLookIdx,
+          floorStoneLookName: FLOOR_STONE_LOOKS[currentFloorStoneLookIdx]?.name || '',
+          floorMaterialRoughness: cathedralFloorMats[0]?.roughness ?? null,
+          floorMaterialMetalness: cathedralFloorMats[0]?.metalness ?? null,
+          keyMoveVelocity: keyMoveVelocity.toArray().map((v) => Number(v.toFixed(4))),
+          keyRotVelocity: {
+            yaw: Number(keyRotVelocity.yaw.toFixed(4)),
+            pitch: Number(keyRotVelocity.pitch.toFixed(4))
+          },
+          cathedralBounds: CATHEDRAL_BOUNDS,
+          solidColumnsCount: CATHEDRAL_SOLID_PILLARS.filter((p) => p.isColumn).length,
+          brazierPillars: CATHEDRAL_SOLID_PILLARS.filter((p) => !p.isColumn),
+          telemetry: cameraTelemetry
+        };
+      },
       captureScreenshot: async (filename) => {
         renderer.render(scene, camera);
         const outCanvas = document.createElement('canvas');
@@ -4885,6 +6042,214 @@ export function initWizardChess() {
         }
       }
 
+      // Atualizar sistemas de partículas 3D, grupo de emissores de luz e faíscas douradas coordenadas
+      for (let i = magicParticleSystems.length - 1; i >= 0; i--) {
+        const sys = magicParticleSystems[i];
+        sys.elapsed += dt;
+        if (sys.elapsed >= sys.maxLife) {
+          if (sys.emitterGroup) {
+            scene.remove(sys.emitterGroup);
+            sys.emitterGroup.traverse((child) => {
+              if (child.geometry && child.geometry !== shockwaveRingGeo && child.geometry !== sparkStreakGeo) {
+                child.geometry.dispose?.();
+              }
+              if (child.material) {
+                if (Array.isArray(child.material)) {
+                  child.material.forEach((m) => m.dispose?.());
+                } else {
+                  child.material.dispose?.();
+                }
+              }
+            });
+          }
+          if (sys.points) {
+            scene.remove(sys.points);
+            sys.points.geometry?.dispose();
+            sys.points.material?.dispose();
+          }
+          if (sys.shockwave) {
+            scene.remove(sys.shockwave);
+            sys.shockwave.material?.dispose();
+          }
+          magicParticleSystems.splice(i, 1);
+          continue;
+        }
+
+        const ox = sys.origin.x;
+        const oy = sys.origin.y;
+        const oz = sys.origin.z;
+
+        // 1. Atualizar emissor central de luz e halo no ponto da captura
+        if (sys.coreLight) {
+          const coreDecay = Math.max(0, 1 - sys.elapsed / 1.15);
+          const pulse = 0.85 + 0.15 * Math.sin(elapsedTotal * 32);
+          sys.coreLight.intensity = 9.5 * Math.pow(coreDecay, 1.6) * pulse;
+        }
+        if (sys.coreHalo) {
+          const haloDecay = Math.max(0, 1 - sys.elapsed / 0.95);
+          sys.coreHalo.material.opacity = haloDecay * 0.95;
+          const haloScale = 0.38 + (1 - haloDecay) * 0.65;
+          sys.coreHalo.scale.set(haloScale, haloScale, 1);
+        }
+
+        // 2. Atualizar o grupo de emissores de luz móveis (acompanhando a física dos estilhaços)
+        if (sys.lightEmitters) {
+          for (let eIdx = 0; eIdx < sys.lightEmitters.length; eIdx++) {
+            const em = sys.lightEmitters[eIdx];
+            const emFade = Math.max(0, 1 - sys.elapsed / 1.65);
+            em.vel.y -= 7.8 * dt;
+            em.light.position.addScaledVector(em.vel, dt);
+
+            const worldY = oy + em.light.position.y;
+            if (worldY < BOARD_SURFACE_Y + 0.04) {
+              em.light.position.y = BOARD_SURFACE_Y + 0.04 - oy;
+              em.vel.y = Math.abs(em.vel.y) * 0.44;
+              em.vel.x *= 0.76;
+              em.vel.z *= 0.76;
+            }
+
+            const flicker = 0.8 + 0.2 * Math.sin(elapsedTotal * 28 + em.phase);
+            em.light.intensity = em.baseIntensity * Math.pow(emFade, 1.3) * flicker;
+            if (em.sprite) {
+              em.sprite.material.opacity = emFade * 0.9;
+              const s = 0.16 + 0.12 * emFade * flicker;
+              em.sprite.scale.set(s, s, 1);
+            }
+          }
+        }
+
+        // 3. Atualizar faíscas douradas 3D alongadas (sparkStreaks) com colisão no tabuleiro e nas peças
+        if (sys.sparkStreaks) {
+          const tmpDir = new THREE.Vector3();
+          for (let sIdx = 0; sIdx < sys.sparkStreaks.length; sIdx++) {
+            const st = sys.sparkStreaks[sIdx];
+            if (sys.elapsed >= st.life) {
+              st.mesh.visible = false;
+              continue;
+            }
+            const stRatio = sys.elapsed / st.life;
+            st.vel.y -= 8.6 * dt;
+            st.vel.x *= Math.max(0, 1 - 1.1 * dt);
+            st.vel.z *= Math.max(0, 1 - 1.1 * dt);
+            st.mesh.position.addScaledVector(st.vel, dt);
+
+            const worldX = ox + st.mesh.position.x;
+            const worldY = oy + st.mesh.position.y;
+            const worldZ = oz + st.mesh.position.z;
+
+            if (worldY < BOARD_SURFACE_Y + 0.025) {
+              st.mesh.position.y = BOARD_SURFACE_Y + 0.025 - oy;
+              st.vel.y = Math.abs(st.vel.y) * 0.46;
+              st.vel.x *= 0.75;
+              st.vel.z *= 0.75;
+            }
+
+            // Colisão física coordenada com as peças do tabuleiro (igual aos fragmentos de pedra)
+            if (worldY < BOARD_SURFACE_Y + 0.45) {
+              for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                  const p = boardState[r][c];
+                  if (p && p.mesh) {
+                    const rx = worldX - p.mesh.position.x;
+                    const rz = worldZ - p.mesh.position.z;
+                    const rDist = Math.hypot(rx, rz);
+                    if (rDist < 0.16 && rDist > 0.0001) {
+                      const nx = rx / rDist;
+                      const nz = rz / rDist;
+                      const vn = st.vel.x * nx + st.vel.z * nz;
+                      if (vn < 0) {
+                        st.vel.x -= 1.6 * vn * nx;
+                        st.vel.z -= 1.6 * vn * nz;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if (st.vel.lengthSq() > 1e-4) {
+              tmpDir.copy(st.vel).normalize();
+              st.mesh.quaternion.setFromUnitVectors(UP_AXIS, tmpDir);
+            }
+            const stFade = Math.pow(1 - stRatio, 1.1);
+            st.mesh.material.opacity = stFade;
+            st.mesh.scale.set(stFade, Math.max(0.35, stFade * 1.25), stFade);
+          }
+        }
+
+        // 4. Atualizar onda de choque dourada no tabuleiro
+        if (sys.shockwave) {
+          const ringProgress = Math.min(1, sys.elapsed / 0.65);
+          const ringScale = 0.55 + (1 - Math.pow(1 - ringProgress, 2.2)) * 3.15;
+          sys.shockwave.scale.setScalar(ringScale);
+          sys.shockwave.material.opacity = Math.max(0, (1 - ringProgress) * 0.88);
+        }
+
+        // 5. Atualizar nuvem de partículas (faíscas douradas, poeira mágica e brasas dos fragmentos)
+        const posArr = sys.positions;
+        const colArr = sys.colors;
+        const baseColArr = sys.baseColors;
+        const velArr = sys.velocities;
+        const kinds = sys.kinds;
+        const phases = sys.phases;
+        const lifetimes = sys.lifetimes;
+
+        for (let pIdx = 0; pIdx < sys.count; pIdx++) {
+          const i3 = pIdx * 3;
+          const lifeLimit = lifetimes[pIdx];
+          const age = sys.elapsed;
+
+          if (age >= lifeLimit) {
+            colArr[i3] = 0;
+            colArr[i3 + 1] = 0;
+            colArr[i3 + 2] = 0;
+            posArr[i3 + 1] = -999;
+            continue;
+          }
+
+          const lifeRatio = age / lifeLimit;
+          const kind = kinds[pIdx];
+
+          if (kind === 1) {
+            // Poeira mágica: flutuação ascendente + redemoinho suave ao redor do ponto de captura
+            const dx = posArr[i3] - ox;
+            const dz = posArr[i3 + 2] - oz;
+            const swirlSpeed = 2.4;
+            velArr[i3] += (-dz * swirlSpeed - velArr[i3] * 1.4) * dt;
+            velArr[i3 + 2] += (dx * swirlSpeed - velArr[i3 + 2] * 1.4) * dt;
+            velArr[i3 + 1] += (0.25 - velArr[i3 + 1] * 0.8) * dt;
+          } else {
+            // Faíscas douradas (0) e brasas dos estilhaços (2): gravidade e quique nas casas do tabuleiro
+            velArr[i3] *= Math.max(0, 1 - 1.45 * dt);
+            velArr[i3 + 2] *= Math.max(0, 1 - 1.45 * dt);
+            velArr[i3 + 1] -= (kind === 2 ? 8.2 : 5.4) * dt;
+          }
+
+          posArr[i3] += velArr[i3] * dt;
+          posArr[i3 + 1] += velArr[i3 + 1] * dt;
+          posArr[i3 + 2] += velArr[i3 + 2] * dt;
+
+          if (kind !== 1 && posArr[i3 + 1] < BOARD_SURFACE_Y + 0.022) {
+            posArr[i3 + 1] = BOARD_SURFACE_Y + 0.022;
+            velArr[i3 + 1] = Math.abs(velArr[i3 + 1]) * 0.44;
+            velArr[i3] *= 0.76;
+            velArr[i3 + 2] *= 0.76;
+          }
+
+          // Cintilação dourada (twinkle) e fade-out suave
+          const fade = Math.pow(1 - lifeRatio, kind === 1 ? 1.35 : 0.92);
+          const twinkle = 0.78 + 0.22 * Math.sin(elapsedTotal * 26 + phases[pIdx]);
+          const intensity = fade * twinkle;
+
+          colArr[i3] = baseColArr[i3] * intensity;
+          colArr[i3 + 1] = baseColArr[i3 + 1] * intensity;
+          colArr[i3 + 2] = baseColArr[i3 + 2] * intensity;
+        }
+
+        sys.points.geometry.attributes.position.needsUpdate = true;
+        sys.points.geometry.attributes.color.needsUpdate = true;
+      }
+
       // Advance volumetric GLSL brazier flames & active warm firelight flicker
       for (let i = 0; i < brazierFireUniforms.length; i++) {
         brazierFireUniforms[i].uTime.value = elapsedTotal;
@@ -4906,7 +6271,13 @@ export function initWizardChess() {
           Math.cos(elapsedTotal * 9.1 + i) * 0.16;
       }
 
-      if (isAnimatingMove || activeMoveTweens.length > 0 || shatterDebris.length > 0 || checkmateState.active) {
+      if (
+        isAnimatingMove ||
+        activeMoveTweens.length > 0 ||
+        shatterDebris.length > 0 ||
+        magicParticleSystems.length > 0 ||
+        checkmateState.active
+      ) {
         renderer.shadowMap.needsUpdate = true;
       }
 
@@ -4944,7 +6315,7 @@ export function initWizardChess() {
       if (urlSide === 'b' || urlSide === 'black') {
         playerColor = 'b';
       }
-      resetChessBoard(true, true);
+      resetChessBoard(true, false);
       if (navigator.webdriver) {
         window.wizardChess.stepBy(0.9, 15);
       } else {
